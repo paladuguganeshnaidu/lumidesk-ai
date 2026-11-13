@@ -2,7 +2,7 @@ from __future__ import annotations
 import io
 import re
 from pathlib import Path
-import fitz
+import pymupdf as fitz
 
 FONT_DIR = Path(__file__).resolve().parent / "fonts"
 
