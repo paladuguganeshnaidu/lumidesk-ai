@@ -178,7 +178,8 @@
     const form = $('#report-form');
     if (!input || !zone || !form) return;
     let latestJobId = '';
-    let lastDownloadUrl = '';
+    let latestCompletedJob = null;
+    let lastDownloadUrls = {pdf:'',docx:''};
     let active = false;
     const progressBox = $('#report-progress');
     const progressTitle = $('#progress-title');
@@ -213,36 +214,49 @@
       const bar = $('#report-progress-fill');
       if (bar && job.total_sections) bar.style.width = `${Math.round((job.done_sections || 0) / job.total_sections * 100)}%`;
     }
+    async function downloadFormat(format) {
+      if (!latestCompletedJob || !['pdf','docx'].includes(format)) {
+        showError('Finish generating a report before downloading.'); return;
+      }
+      const url = latestCompletedJob.downloads?.[format];
+      if (!url) { showError(`${format.toUpperCase()} is not available for this report.`);return; }
+      try {
+        const response = await api(url);
+        const blob = await response.blob();
+        if (blob.size < 100) throw new Error('The generated document is unexpectedly small.');
+        const mime = String(blob.type || '');
+        if (format === 'pdf' && !mime.includes('pdf')) throw new Error('The PDF export was invalid.');
+        if (format === 'docx' && !mime.includes('wordprocessingml')) throw new Error('The Word export was invalid.');
+        if (lastDownloadUrls[format]) URL.revokeObjectURL(lastDownloadUrls[format]);
+        lastDownloadUrls[format] = URL.createObjectURL(blob);
+        const filename = (response.headers.get('content-disposition') || '').match(/filename="?([^";]+)"?/i)?.[1] || `LumiDesk_Report.${format}`;
+        const anchor = document.createElement('a');
+        anchor.href = lastDownloadUrls[format]; anchor.download = filename;
+        document.body.append(anchor);anchor.click();anchor.remove();
+        toast(`${format.toUpperCase()} downloaded. Review the document before submission.`);
+      } catch (error) { showError(error.message || 'The document could not be downloaded.'); }
+    }
     async function download(job) {
-      const response = await api(job.download_url || `/api/reports/jobs/${job.job_id}/download`);
-      const blob = await response.blob();
-      if (blob.type && !blob.type.includes('pdf')) throw new Error('The download was not a PDF. Please retry.');
-      if (blob.size < 100) throw new Error('The generated PDF is unexpectedly small.');
-      if (lastDownloadUrl) URL.revokeObjectURL(lastDownloadUrl);
-      lastDownloadUrl = URL.createObjectURL(blob);
-      const raw = response.headers.get('content-disposition') || '';
-      const filename = raw.match(/filename="?([^";]+)"?/i)?.[1] || 'LumiDesk_Report.pdf';
-      const anchor = document.createElement('a');
-      anchor.href = lastDownloadUrl;
-      anchor.download = filename;
-      document.body.append(anchor);
-      anchor.click();
-      anchor.remove();
+      latestCompletedJob = job;
       successBox?.classList.remove('hidden');
       if (regenPanel) regenPanel.classList.remove('hidden');
+      const wordButton = $('#download-word');
+      if (wordButton) {
+        wordButton.disabled = !job.downloads?.docx;
+        wordButton.title = job.downloads?.docx ? 'Download editable Word document' : 'Word export unavailable: PDF remains available';
+      }
       const warnings = Array.isArray(job.warnings) ? job.warnings : [];
       const overlap = job.overlap_estimate === null || job.overlap_estimate === undefined ?
         '' : ` Estimated 4-word overlap with the previous draft: ${(Number(job.overlap_estimate) * 100).toFixed(1)}% (not a plagiarism score).`;
       if (successText) successText.textContent =
-        `Your ${job.pages || 'multi-page'}-section report is ready.${overlap} ` +
-        (warnings.length ? `Review required: ${warnings.slice(0, 2).join(' ')}` :
-          'Review source evidence, accuracy and formatting before academic submission.');
+        `Your ${job.pages || 'multi-page'}-page draft is ready as ${job.downloads?.docx ? 'PDF and editable Word' : 'PDF'}.${overlap} ` +
+        (warnings.length ? `Review notes: ${warnings.slice(0,2).join(' ')}` : 'Verify facts, faculty pages and referenced photographs.');
       const name = form.querySelector('[name="student_name"]');
       const usn = form.querySelector('[name="usn"]');
       if ($('#regen-name') && name) $('#regen-name').value = name.value;
       if ($('#regen-usn') && usn) $('#regen-usn').value = usn.value;
       await refreshStudentOverview();
-      toast('Your PDF draft has downloaded. You can regenerate another variant below.');
+      toast('Your report is ready. Choose PDF and Word to download both files.');
     }
     async function waitForJob(jobId) {
       latestJobId = jobId;
@@ -276,6 +290,7 @@
       input.value = '';
       $('#file-selected')?.classList.add('hidden');
       $('#template-analysis')?.classList.add('hidden');
+      $('#format-inspector')?.classList.add('hidden');
     });
     ['dragenter', 'dragover'].forEach(type => zone.addEventListener(type, e => {
       e.preventDefault(); zone.classList.add('dragover');
@@ -311,6 +326,20 @@
           `<p>Department: ${escapeHTML(info.department || 'Retained from the source')}</p>` +
           `<p>Original title: ${escapeHTML(info.source_title || 'Not identified')}</p>` +
           `<small>Images: ${Number(info.image_count || 0)}. Editable chapters: ${escapeHTML(sections.join(' · ') || 'No safe body-text sections recognized')}.</small>`;
+        const metrics = info.typography || {};
+        const inspector = $('#format-inspector');
+        const metricsGrid = $('#font-metrics');
+        if (inspector && metricsGrid) {
+          const fonts = (metrics.font_styles || []).slice(0,5).map(x => `<div class="font-chip"><span>${escapeHTML(x.family)}</span><b>${Number(x.size_pt).toFixed(1)}pt</b><small>${Number(x.text_lines)} lines</small></div>`).join('');
+          const margins = metrics.first_page?.measured_margins_pt || {};
+          const spacing = metrics.typical_line_spacing_pt;
+          metricsGrid.innerHTML = `<div class="metric-label">${fonts || 'No measurable font sizes detected'}</div>` +
+            `<div class="inspector-stats"><div><b>${spacing === null || spacing === undefined ? '—' : Number(spacing).toFixed(1)+' pt'}</b><small>Typical baseline spacing</small></div>` +
+            `<div><b>${Number(margins.left || 0).toFixed(1)} / ${Number(margins.right || 0).toFixed(1)} pt</b><small>First-page left / right text margins</small></div>` +
+            `<div><b>${metrics.first_page?.page_size_pt?.map(n=>Math.round(n)).join(' × ') || '—'} pt</b><small>First-page dimensions</small></div></div>`;
+          inspector.classList.remove('hidden');
+          if (window.lucide) window.lucide.createIcons();
+        }
       } catch (error) {
         if (summary) summary.textContent = `PDF inspection: ${error.message}`;
       }
@@ -370,12 +399,14 @@
       form.reset(); input.value = '';
       $('#file-selected')?.classList.add('hidden');
       $('#template-analysis')?.classList.add('hidden');
+      $('#format-inspector')?.classList.add('hidden');
       successBox?.classList.add('hidden');
       errorBox?.classList.add('hidden');
       regenPanel?.classList.add('hidden');
       latestJobId = '';
       sessionStorage.removeItem('lumidesk_report_job');
-      if (lastDownloadUrl) { URL.revokeObjectURL(lastDownloadUrl); lastDownloadUrl = ''; }
+      for (const kind of ['pdf','docx']) { if (lastDownloadUrls[kind]) { URL.revokeObjectURL(lastDownloadUrls[kind]); lastDownloadUrls[kind] = ''; } }
+      latestCompletedJob = null;
     });
 
     // Refresh/reopen resumes polling for jobs still running in this Render process.
