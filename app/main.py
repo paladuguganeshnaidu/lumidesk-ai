@@ -27,6 +27,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from .ai import AIUnavailable, rewrite_report_pages, tutor_response
 from .db import ReportRecord, UsageEvent, User, daily_count, get_db, init_db, record_usage, upsert_user
 from .pdf_engine import inspect_pdf, render_replacement_pdf
+from .typography import summarize_typography
 from .report_pipeline import extract_template_details, content_slots, build_plan
 from .report_jobs import create_job, for_user, public_job
 from .security import csrf_token, current_user, require_admin, require_csrf
@@ -213,6 +214,7 @@ async def analyze_report_template(request: Request, file: UploadFile = File(...)
     template = _read_template(source)
     analysis = extract_template_details(template)
     slots = content_slots(template)
+    analysis["typography"] = summarize_typography(template)
     analysis["editable_sections"] = [{"page": s["page_index"]+1, "name": s["section"], "lines": len(s["slots"])} for s in slots]
     analysis["editable_line_count"] = sum(len(s["slots"]) for s in slots)
     analysis["note"] = "Only body content and requested student/title details will be changed. Headings, college details, formatting and pictures are retained."
@@ -259,18 +261,24 @@ def report_job_status(job_id: str, request: Request):
 
 
 @app.get("/api/reports/jobs/{job_id}/download")
-def download_report_job(job_id: str, request: Request):
+def download_report_job(job_id: str, request: Request, format: str = "pdf"):
     user = current_user(request)
     job = for_user(job_id, user["id"])
     if job is None:
         raise HTTPException(status_code=404, detail="Report job not found or it has expired.")
+    if format not in ("pdf", "docx"):
+        raise HTTPException(status_code=422, detail="Choose PDF or Word (.docx).")
     if job.status != "completed" or not job.result:
         raise HTTPException(status_code=409, detail="The report has not finished generating.")
+    content = job.result if format == "pdf" else job.word_result
+    if not content:
+        raise HTTPException(status_code=409, detail="The Word export is not available for this report. Download the PDF instead.")
     safe_name = "".join(c for c in job.title if c.isalnum() or c in " -_").strip().replace(" ", "_")[:55] or "LumiDesk_Report"
     return Response(
-        content=job.result, media_type="application/pdf",
+        content=content,
+        media_type="application/pdf" if format == "pdf" else "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         headers={
-            "Content-Disposition": f'attachment; filename="{safe_name}_LumiDesk.pdf"',
+            "Content-Disposition": f'attachment; filename="{safe_name}_LumiDesk.{format}"',
             "Cache-Control": "private, no-store",
             "X-Report-Warnings": str(len(job.warnings)),
         },
