@@ -14,6 +14,7 @@ import re
 from lxml import etree
 from docx import Document
 from docx.enum.text import WD_BREAK
+from docx.enum.section import WD_SECTION
 from docx.oxml import OxmlElement
 from docx.shared import Pt
 import pymupdf as fitz
@@ -131,10 +132,20 @@ def export_editable_docx(pdf: bytes, *, max_pages: int = 70, dpi: int = 90) -> t
     word.core_properties.subject='Editable Word layout reconstructed from the generated PDF'
     warnings = []
     line_id=0
+    previous_size = (float(first.width),float(first.height))
+    previous_para = None
     for index in range(len(document)):
         page=document[index]
-        if abs(page.rect.width-first.width)>1 or abs(page.rect.height-first.height)>1:
-            warnings.append(f'Page {index+1}: custom page dimensions scaled into the first page format in Word.')
+        current_size=(float(page.rect.width),float(page.rect.height))
+        if index and (abs(current_size[0]-previous_size[0])>1 or abs(current_size[1]-previous_size[1])>1):
+            # Word supports mixed paper sizes via next-page section breaks.
+            section=word.add_section(WD_SECTION.NEW_PAGE)
+            section.page_width=Pt(page.rect.width);section.page_height=Pt(page.rect.height)
+            section.top_margin=Pt(0);section.bottom_margin=Pt(0)
+            section.left_margin=Pt(0);section.right_margin=Pt(0)
+            section.header_distance=Pt(0);section.footer_distance=Pt(0)
+        elif index and previous_para is not None:
+            previous_para.add_run().add_break(WD_BREAK.PAGE)
         para=word.add_paragraph()
         para.paragraph_format.space_before=Pt(0);para.paragraph_format.space_after=Pt(0)
         para.paragraph_format.line_spacing=Pt(1)
@@ -165,15 +176,13 @@ def export_editable_docx(pdf: bytes, *, max_pages: int = 70, dpi: int = 90) -> t
         image=background.get_pixmap(matrix=fitz.Matrix(zoom,zoom),alpha=False).tobytes('png')
         work.close()
         picture=para.add_run()
-        picture.add_picture(io.BytesIO(image),width=Pt(first.width),height=Pt(first.height))
-        _set_background_anchor(picture, first.width, first.height)
+        picture.add_picture(io.BytesIO(image),width=Pt(page.rect.width),height=Pt(page.rect.height))
+        _set_background_anchor(picture, float(page.rect.width), float(page.rect.height))
         for line in lines:
             line_id+=1
-            _text_box(para,line,line_id,float(first.width),float(first.height))
-        if index+1<len(document):
-            # A page break inserted into the same small anchor paragraph prevents
-            # the large empty paragraph after a drawing from creating spare pages.
-            para.add_run().add_break(WD_BREAK.PAGE)
+            _text_box(para,line,line_id,float(page.rect.width),float(page.rect.height))
+        previous_size=current_size
+        previous_para=para
     document.close()
     output=io.BytesIO();word.save(output)
     warnings.append('Word contains editable positioned text and page artwork. Word/LibreOffice may substitute unavailable fonts or slightly reposition lines; PDF remains the pixel-accurate reference.')
