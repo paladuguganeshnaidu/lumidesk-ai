@@ -34,3 +34,26 @@
 .regenerate-fields{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px}
 .regenerate-panel .button{width:100%;justify-content:center}
 @media(max-width:530px){.regenerate-fields{grid-template-columns:1fr}}
+
+/* LumiDesk v4: typography inspection and explicit dual-format exports */
+.format-inspector{margin:0 21px 20px;padding:17px;border:1px solid #e8e2f7;border-radius:16px;background:#fff;box-shadow:0 8px 26px #51487909}
+.inspector-heading{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:13px;flex-wrap:wrap}
+.inspector-heading>span{display:flex;gap:8px;align-items:center;color:#54476c;font-size:12px;font-weight:800}
+.inspector-heading svg{width:15px;color:#8c78d0}
+.inspector-heading small{color:#9089a1;font-size:9px}
+.font-metrics{display:grid;gap:10px}
+.metric-label{display:flex;gap:8px;flex-wrap:wrap}
+.font-chip{display:flex;align-items:center;gap:7px;padding:8px 10px;border:1px solid #ede8fb;background:#f8f5ff;border-radius:10px;font-size:10px;color:#666079}
+.font-chip b{font-weight:800;color:#7869bc}.font-chip small{font-size:8px;color:#aaa2bc}
+.inspector-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px}
+.inspector-stats>div{padding:11px;background:linear-gradient(145deg,#f9f8ff,#f7fbfa);border:1px solid #eeebf5;border-radius:11px}
+.inspector-stats b,.inspector-stats small{display:block}
+.inspector-stats b{font-size:11px;color:#4b455e}.inspector-stats small{font-size:9px;color:#928ba4;margin-top:5px}
+.inspector-footnote{font-size:9px;color:#9891a7;line-height:1.55;margin:12px 0 0}
+.report-download-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:18px auto;max-width:520px}
+.report-download-grid button{display:flex;min-height:64px;gap:11px;align-items:center;justify-content:center;text-align:left;white-space:normal}
+.report-download-grid button svg{width:22px;height:22px;flex:none}
+.report-download-grid button b,.report-download-grid button small{display:block}
+.report-download-grid button b{font-size:12px}.report-download-grid button small{font-size:9px;opacity:.85;line-height:1.35;margin-top:3px}
+.report-download-grid button:disabled{opacity:.48;cursor:not-allowed}
+@media(max-width:760px){.format-inspector{margin-inline:14px}.inspector-stats{grid-template-columns:1fr}.report-download-grid{grid-template-columns:1fr;max-width:330px}}
