@@ -31,8 +31,8 @@ APP_ENV = os.getenv("APP_ENV", "development").lower()
 IS_PROD = APP_ENV == "production"
 SECRET_KEY = os.getenv("SECRET_KEY", "dev-only-change-this-secret-before-deploy")
 MAX_UPLOAD_MB = int(os.getenv("MAX_UPLOAD_MB", "15"))
-TUTOR_LIMIT = int(os.getenv("DAILY_TUTOR_LIMIT", "35"))
-REPORT_LIMIT = int(os.getenv("DAILY_REPORT_LIMIT", "3"))
+TUTOR_LIMIT = max(0, int(os.getenv("DAILY_TUTOR_LIMIT", "0")))
+REPORT_LIMIT = max(0, int(os.getenv("DAILY_REPORT_LIMIT", "0")))
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
@@ -165,7 +165,7 @@ async def api_tutor(payload: TutorInput, request: Request, db: Session = Depends
     require_csrf(request)
     user = current_user(request)
     used = daily_count(db, user["id"], "tutor")
-    if used >= TUTOR_LIMIT:
+    if TUTOR_LIMIT > 0 and used >= TUTOR_LIMIT:
         raise HTTPException(status_code=429, detail=f"You've reached today's learning limit ({TUTOR_LIMIT}). Please try again in 24 hours.")
     try:
         result = await tutor_response(payload.message, payload.level, payload.style)
@@ -193,7 +193,7 @@ async def api_generate_report(
     require_csrf(request)
     user = current_user(request)
     used = daily_count(db, user["id"], "report")
-    if used >= REPORT_LIMIT:
+    if REPORT_LIMIT > 0 and used >= REPORT_LIMIT:
         raise HTTPException(status_code=429, detail=f"You've reached today's report limit ({REPORT_LIMIT}).")
     if file.content_type != "application/pdf" and not (file.filename or "").lower().endswith(".pdf"):
         raise HTTPException(status_code=415, detail="Upload a PDF reference template.")
