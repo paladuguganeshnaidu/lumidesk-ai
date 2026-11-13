@@ -77,6 +77,16 @@ def health():
     return {"status": "ok", "service": "lumidesk-ai", "timestamp": datetime.now(timezone.utc).isoformat()}
 
 
+@app.head("/health")
+def health_head():
+    return Response(status_code=200)
+
+
+@app.head("/")
+def home_head():
+    return Response(status_code=200)
+
+
 @app.get("/", response_class=HTMLResponse)
 def home(request: Request):
     user = request.session.get("user")
