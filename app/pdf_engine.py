@@ -7,7 +7,7 @@ import pymupdf as fitz
 FONT_DIR = Path(__file__).resolve().parent / "fonts"
 
 MAX_PAGES = 35
-MAX_BLOCKS = 160
+MAX_BLOCKS = 500
 
 
 def _clean_text(text: str) -> str:
