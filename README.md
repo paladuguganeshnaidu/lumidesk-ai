@@ -32,7 +32,7 @@ Open http://127.0.0.1:8000.
 - `ADMIN_EMAILS`: comma-separated, verified Google email addresses allowed into the admin console.
 - `DATABASE_URL`: durable PostgreSQL URL for persistent accounts and activity. Without it, local SQLite is used.
 
-Optional settings include `NVIDIA_MODEL`, `NVIDIA_BASE_URL`, `MAX_UPLOAD_MB`, `DAILY_TUTOR_LIMIT`, `DAILY_REPORT_LIMIT` and `APP_ENV`.
+Optional settings include `NVIDIA_MODEL`, `NVIDIA_BASE_URL`, `MAX_UPLOAD_MB`, `DAILY_TUTOR_LIMIT`, `DAILY_REPORT_LIMIT` and `APP_ENV`. Set `DAILY_TUTOR_LIMIT=0` and `DAILY_REPORT_LIMIT=0` for no daily application-level quotas. Provider inference quotas, costs, abuse controls and per-file upload caps still apply.
 
 Never commit secrets. Configure them in Render Environment settings.
 
