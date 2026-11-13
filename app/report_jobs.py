@@ -20,6 +20,7 @@ import pymupdf
 from .ai import rewrite_report_pages
 from .db import ReportRecord, SessionLocal, record_usage
 from .pdf_engine import inspect_pdf, render_replacement_pdf
+from .docx_export import export_editable_docx
 from .report_pipeline import build_plan, content_slots, extract_template_details
 
 KEEP_SECONDS = 60 * 60
@@ -47,6 +48,7 @@ class ReportJob:
     done_sections: int = 0
     total_sections: int = 0
     result: bytes | None = None
+    word_result: bytes | None = None
     pages: list[dict] | None = None
     warnings: list[str] = field(default_factory=list)
     overlap: float | None = None
@@ -110,7 +112,11 @@ def public_job(job: ReportJob) -> dict[str, Any]:
         'done_sections': job.done_sections, 'total_sections': job.total_sections,
         'pages': job.total_sections, 'warnings': job.warnings[:14],
         'overlap_estimate': job.overlap,
-        'download_url': f'/api/reports/jobs/{job.id}/download' if job.status == 'completed' else None,
+        'download_url': f'/api/reports/jobs/{job.id}/download?format=pdf' if job.status == 'completed' else None,
+        'downloads': {
+            'pdf': f'/api/reports/jobs/{job.id}/download?format=pdf' if job.status == 'completed' and job.result else None,
+            'docx': f'/api/reports/jobs/{job.id}/download?format=docx' if job.status == 'completed' and job.word_result else None,
+        },
         'regenerate_url': f'/api/reports/jobs/{job.id}/regenerate' if job.status == 'completed' else None,
         'error': job.error,
         'temporary': True,
@@ -191,13 +197,23 @@ async def run_job(job: ReportJob) -> None:
                     raise ValueError('The reconstructed document had a different page count.')
                 if final.is_encrypted or not result.startswith(b'%PDF-'):
                     raise ValueError('The reconstructed file was not a valid readable PDF.')
+            # Generate DOCX from the exact completed PDF so both files contain
+            # the same body text, images and page ordering.
+            job.detail = 'Building editable Word textboxes with the measured font positions…'
+            try:
+                job.word_result, word_warnings = await asyncio.to_thread(export_editable_docx, result)
+                job.warnings.extend(word_warnings[:8])
+            except Exception as exc:
+                logging.exception('Word export failed for report %s', job.id)
+                job.word_result = None
+                job.warnings.append('PDF ready, but Word export could not be completed for this template. Please download the PDF and review it.')
             job.warnings.extend(analysis.get('warnings', []))
             job.warnings.extend(warnings)
             job.warnings.append('Review facts and verify any original photographs, certificates, signatures and references before submission.')
             job.result = result
             job.pages = generated
             job.done_sections = job.total_sections
-            job.detail = 'PDF ready. Review the draft before submission.'
+            job.detail = 'PDF and editable Word ready for review.' if job.word_result else 'PDF ready; Word needs review.'
             job.status = 'completed'
             try:
                 with SessionLocal() as db:
