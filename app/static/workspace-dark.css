@@ -1,0 +1,46 @@
+:root{--lumidark:#0A0C0E;--lumipanel:#101317;--lumiink:#EDE7DC;--lumimuted:#9EA5A8;--lumiamber:#E8913C;--lumiteal:#2E6B72;--lumiline:rgba(237,231,220,.13)}
+.workspace-page,.workspace-page button,.workspace-page input,.workspace-page select,.workspace-page textarea{font-family:'Sora',sans-serif!important}
+.workspace-page{background:var(--lumidark)!important;color:var(--lumiink)!important}
+.workspace-page *{box-shadow:none!important}
+.workspace-page .app-shell,.workspace-page .app-main{background:var(--lumidark)}
+.workspace-page .app-sidebar,.workspace-page .tutor-main-card,.workspace-page .report-main-card,.workspace-page .aside-card,.workspace-page .admin-table-card,.workspace-page .admin-system-card,.workspace-page .metric-card{background:var(--lumipanel)!important;border:1px solid var(--lumiline)!important;border-radius:4px!important}
+.workspace-page .app-topbar{background:rgba(10,12,14,.85)!important;border-color:var(--lumiline)!important;backdrop-filter:blur(14px)}
+.workspace-page .brand{font:800 18px 'Syne',sans-serif;color:var(--lumiink);letter-spacing:-.04em}
+.workspace-page .brand-ai{color:var(--lumiamber)}.workspace-page .brand-mark,.workspace-page .panel-title-icon,.workspace-page .aside-icon,.workspace-page .welcome-symbol,.workspace-page .upload-icon{background:transparent!important;color:var(--lumiamber)!important;border:1px solid var(--lumiline);border-radius:50%!important}
+.workspace-page .sidebar-label,.workspace-page .eyebrow,.workspace-page .breadcrumb,.workspace-page .aside-kicker,.workspace-page .field,.workspace-page .form-section-title,.workspace-page .select-label{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--lumimuted)!important}
+.workspace-page .side-link{border-radius:0!important;border-left:2px solid transparent;background:transparent!important;color:var(--lumimuted)!important}
+.workspace-page .side-link.active{border-color:var(--lumiamber)!important;color:var(--lumiink)!important;background:rgba(237,231,220,.03)!important}
+.workspace-page .side-link svg,.workspace-page .help-spark,.workspace-page .icon-button:hover,.workspace-page .text-link-button,.workspace-page .inline-button{color:var(--lumiamber)!important}
+.workspace-page .help-card,.workspace-page .user-card{background:transparent!important;border-color:var(--lumiline)!important;border-radius:0!important}
+.workspace-page .help-card b,.workspace-page .user-meta b,.workspace-page .panel-heading b,.workspace-page .aside-card b,.workspace-page .table-card-head b{color:var(--lumiink)!important}
+.workspace-page .help-card p,.workspace-page .help-card a,.workspace-page .user-meta small,.workspace-page .workspace-heading p,.workspace-page .panel-heading small,.workspace-page .assistant-welcome p,.workspace-page .aside-card p,.workspace-page .aside-card small,.workspace-page .composer-hint{color:var(--lumimuted)!important}
+.workspace-page .workspace-heading{border-bottom:1px solid var(--lumiline);padding-bottom:25px}
+.workspace-page .workspace-heading h1,.workspace-page .assistant-welcome h2,.workspace-page .aside-card h3{color:var(--lumiink)!important;font-family:'Syne',sans-serif!important;letter-spacing:-.03em}
+.workspace-page .gradient-words{background:none!important;-webkit-text-fill-color:var(--lumiamber)!important;color:var(--lumiamber)!important}
+.workspace-page .heading-orb{border:1px solid var(--lumiline);border-radius:50%!important;background:transparent!important;color:var(--lumiamber);animation:none!important;transform:none!important}
+.workspace-page .panel-heading,.workspace-page .user-card,.workspace-page .app-footer,.workspace-page .table-card-head,.workspace-page .table-wrap td,.workspace-page .table-wrap th,.workspace-page .system-check{border-color:var(--lumiline)!important}
+.workspace-page .online-indicator,.workspace-page .free-pill,.workspace-page .admin-pill{background:transparent!important;border:1px solid var(--lumiline);color:var(--lumimuted)!important}
+.workspace-page .prompt-chip,.workspace-page .button-primary,.workspace-page .button-secondary,.workspace-page .admin-tab{background:transparent!important;border:1px solid var(--lumiline)!important;color:var(--lumiink)!important}
+.workspace-page .button-primary{border-color:var(--lumiamber)!important}
+.workspace-page .button{border-radius:45px!important;letter-spacing:.06em;text-transform:uppercase;transition:transform .2s,color .2s,border-color .2s}
+.workspace-page .button:hover{transform:translateY(-2px);border-color:var(--lumiink)!important;color:var(--lumiamber)!important}
+.workspace-page .prompt-chip:hover,.workspace-page .side-link:hover{color:var(--lumiamber)!important;border-color:var(--lumiamber)!important}
+.workspace-page .composer-input,.workspace-page .field input,.workspace-page .field textarea,.workspace-page .table-search{background:var(--lumidark)!important;border:1px solid var(--lumiline)!important;color:var(--lumiink)!important;border-radius:4px!important}
+.workspace-page .composer-input textarea{color:var(--lumiink)!important;background:transparent!important}
+.workspace-page input::placeholder,.workspace-page textarea::placeholder{color:#6C7378!important}
+.workspace-page .field input:focus,.workspace-page .field textarea:focus,.workspace-page .composer-input:focus-within{border-color:var(--lumiamber)!important}
+.workspace-page .select-label select{background:var(--lumipanel)!important;color:var(--lumiink)!important}
+.workspace-page .send-button{background:transparent!important;border:1px solid var(--lumiamber);color:var(--lumiamber);border-radius:50%!important}
+.workspace-page .upload-zone{background:transparent!important;border:1px dashed rgba(237,231,220,.3)!important;border-radius:4px!important;color:var(--lumiink)!important}
+.workspace-page .upload-zone:hover{border-color:var(--lumiamber)!important}
+.workspace-page .format-inspector,.workspace-page .template-analysis,.workspace-page .regenerate-panel,.workspace-page .report-success,.workspace-page .progress-state{background:var(--lumipanel)!important;border:1px solid var(--lumiline)!important;border-radius:4px!important;color:var(--lumiink)!important}
+.workspace-page .font-metrics>*,.workspace-page .preserve-pills>span{background:transparent!important;border:1px solid var(--lumiline)!important;color:var(--lumimuted)!important}
+.workspace-page .usage-number b,.workspace-page .metric-card b,.workspace-page .report-success h3,.workspace-page .format-inspector h3,.workspace-page .inspector-heading{color:var(--lumiink)!important}
+.workspace-page .usage-track,.workspace-page .report-progress-track{background:rgba(237,231,220,.07)!important}
+.workspace-page .usage-track>span,.workspace-page .report-progress-track>span{background:var(--lumiamber)!important}
+.workspace-page .table-wrap th{background:var(--lumipanel)!important;color:var(--lumimuted)!important}
+.workspace-page .table-wrap td,.workspace-page .system-check,.workspace-page .app-footer,.workspace-page .admin-footnote{color:var(--lumimuted)!important}
+.workspace-page .admin-tab.active{color:var(--lumiamber)!important;border-color:var(--lumiamber)!important}
+.workspace-page .user-avatar{color:var(--lumiamber)!important;background:var(--lumipanel)!important}
+.workspace-page :focus-visible{outline:2px solid var(--lumiamber);outline-offset:3px}
+@media(max-width:760px){.workspace-page .app-sidebar{background:var(--lumipanel)!important}.workspace-page .workspace-content{width:calc(100% - 34px)}.workspace-page .heading-orb{display:none}}
