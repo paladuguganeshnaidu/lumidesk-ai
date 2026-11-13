@@ -41,6 +41,8 @@ class ReportJob:
     student_name: str
     usn: str
     variant: int = 0
+    mode: str = 'new_project'
+    source_overlap: float | None = None
     parent_id: str | None = None
     created_at: float = field(default_factory=time.time)
     status: str = 'queued'
@@ -82,7 +84,7 @@ def _comparison(a: list[dict], b: list[dict]) -> float:
 
 
 def create_job(*, user_id: int, source: bytes, title: str, topic: str,
-               student_name: str, usn: str, parent: ReportJob | None = None) -> ReportJob:
+               student_name: str, usn: str, parent: ReportJob | None = None, mode: str = 'new_project') -> ReportJob:
     _prune()
     user_jobs = [j for j in jobs.values() if j.user_id == user_id]
     active = [j for j in jobs.values() if j.status in ('queued', 'running')]
@@ -100,6 +102,7 @@ def create_job(*, user_id: int, source: bytes, title: str, topic: str,
         id=secrets.token_urlsafe(18), user_id=user_id, source=source,
         title=title, topic=topic, student_name=student_name, usn=usn,
         parent_id=parent.id if parent else None, variant=(parent.variant + 1) if parent else 0,
+        mode=parent.mode if parent else mode,
     )
     jobs[job.id] = job
     job.task = asyncio.create_task(run_job(job))
@@ -108,7 +111,8 @@ def create_job(*, user_id: int, source: bytes, title: str, topic: str,
 
 def public_job(job: ReportJob) -> dict[str, Any]:
     return {
-        'job_id': job.id, 'status': job.status, 'detail': job.detail,
+        'job_id': job.id, 'status': job.status, 'detail': job.detail, 'mode': job.mode,
+        'source_overlap_estimate': job.source_overlap,
         'done_sections': job.done_sections, 'total_sections': job.total_sections,
         'pages': job.total_sections, 'warnings': job.warnings[:14],
         'overlap_estimate': job.overlap,
@@ -183,8 +187,30 @@ async def run_job(job: ReportJob) -> None:
             else:
                 generated = []
                 job.warnings.append('No safe body-text regions were detected; only identified title and student details were changed.')
+            if job.mode == 'approved_reference' and generated:
+                source_blocks = [
+                    {'page_index': page['page_index'],
+                     'blocks': [{'block_id': row['block_id'], 'text': row['sample']} for row in page['slots']]}
+                    for page in sections
+                ]
+                job.source_overlap = _comparison(generated, source_blocks)
+                if job.source_overlap > 0.30:
+                    job.detail = 'Revising overly similar body wording…'
+                    alternate = await rewrite_report_pages(
+                        title=job.title, topic=job.topic, sections=sections,
+                        variant_seed=job.variant + 9, previous_pages=source_blocks,
+                        progress=update_progress,
+                    )
+                    revised = _comparison(alternate, source_blocks)
+                    if revised < job.source_overlap:
+                        generated = alternate
+                        job.source_overlap = revised
+                    if job.source_overlap > .30:
+                        job.warnings.append('Estimated original-reference overlap exceeds 30%. This is not a plagiarism score; review and write from your own evidence.')
+                job.warnings.append('A reference file is not evidence of your own work. Replace photos and verify all citations, dates, outcomes and faculty approval.')
             job.detail = 'Fitting replacement text into the existing PDF layout…'
-            plan = build_plan(template, analysis, job.title, job.student_name, job.usn, generated)
+            plan = build_plan(template, analysis, job.title, job.student_name, job.usn, generated,
+                              preserve_references=job.mode == 'approved_reference')
             if plan['rewritten_body_slots'] != plan['planned_body_slots'] or plan['rejected_ai_slots']:
                 # Do not pass through incomplete model output as if it were verified.
                 job.warnings.append('Some text areas needed review after the layout-fitting check.')

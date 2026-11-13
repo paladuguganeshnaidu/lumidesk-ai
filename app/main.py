@@ -28,7 +28,7 @@ from .ai import AIUnavailable, rewrite_report_pages, tutor_response
 from .db import ReportRecord, UsageEvent, User, daily_count, get_db, init_db, record_usage, upsert_user
 from .pdf_engine import inspect_pdf, render_replacement_pdf
 from .typography import summarize_typography
-from .report_pipeline import extract_template_details, content_slots, build_plan
+from .report_pipeline import extract_template_details, content_slots, build_plan, extract_approved_reference_context
 from .report_jobs import create_job, for_user, public_job
 from .security import csrf_token, current_user, require_admin, require_csrf
 
@@ -246,6 +246,41 @@ async def start_report_job(
             user_id=user["id"], source=source, title=title.strip(), topic=topic.strip(),
             student_name=student_name.strip(), usn=usn.strip(),
         )
+    except ValueError as exc:
+        raise HTTPException(status_code=429, detail=str(exc)) from exc
+    return public_job(job)
+
+
+@app.post("/api/reports/approved/start", status_code=202)
+async def start_approved_reference_job(
+    request: Request,
+    file: UploadFile = File(...),
+    student_name: str = Form(..., min_length=2, max_length=140),
+    usn: str = Form(..., min_length=2, max_length=32),
+    permission_granted: bool = Form(False),
+    db: Session = Depends(get_db),
+):
+    """Generate an original draft using a separately authorized, same-topic PDF format.
+
+    This does not certify originality, endorse copying someone else's work,
+    or assert that referenced activities were carried out by the new student.
+    """
+    require_csrf(request)
+    user = current_user(request)
+    if not permission_granted:
+        raise HTTPException(status_code=422, detail='Confirm you have permission to use this PDF as a reference.')
+    if REPORT_LIMIT > 0 and daily_count(db, user['id'], 'report') >= REPORT_LIMIT:
+        raise HTTPException(status_code=429, detail='The daily report allowance has been reached.')
+    source = await _read_report_upload(file)
+    template = await asyncio.to_thread(_read_template, source)
+    analysis = extract_template_details(template)
+    if not content_slots(template):
+        raise HTTPException(status_code=422, detail='The approved PDF has no identifiable editable body sections. Use a text-based report with section headings.')
+    title, topic = extract_approved_reference_context(template, analysis)
+    try:
+        job = create_job(user_id=user['id'], source=source, title=title, topic=topic,
+                         student_name=student_name.strip(), usn=usn.strip(),
+                         mode='approved_reference')
     except ValueError as exc:
         raise HTTPException(status_code=429, detail=str(exc)) from exc
     return public_job(job)

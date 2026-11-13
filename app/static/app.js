@@ -54,6 +54,8 @@
     if (!(workspace && (event.metaKey || event.ctrlKey))) return;
     if (event.key === '1') { event.preventDefault(); selectTab('tutor'); }
     if (event.key === '2') { event.preventDefault(); selectTab('reports'); }
+    if (event.key === '3') { event.preventDefault(); selectTab('reference'); }
+    if (event.key === '4') { event.preventDefault(); selectTab('focus'); }
   });
 
   const orb = $('.hero-orb');
@@ -91,6 +93,7 @@
     try { me = await loadMe(); }
     catch { toast('Please sign in to use your workspace.'); return; }
     if (!me.authenticated) {
+      ['approved-form','study-task-form'].forEach(id => document.getElementById(id)?.classList.add('hidden'));
       const area = $('#chat-area');
       if (area) area.innerHTML = `<div class="assistant-welcome"><div class="welcome-symbol">✳</div><h2>Your learning space is waiting.</h2><p>Sign in with your Google account to use the visual tutor and report studio.</p><a class="button button-primary" href="/auth/google">Continue with Google <span>→</span></a></div>`;
       const reportForm = $('#report-form'); if (reportForm) reportForm.classList.add('hidden');
@@ -103,17 +106,17 @@
     toggle?.addEventListener('click', () => $('.app-sidebar')?.classList.toggle('mobile-open'));
     $$('[data-tab]').forEach(button => button.addEventListener('click', () => selectTab(button.dataset.tab)));
     const initialTab = new URLSearchParams(location.search).get('tab');
-    selectTab(initialTab === 'reports' ? 'reports' : 'tutor');
+    selectTab(['reports','reference','focus','tutor'].includes(initialTab) ? initialTab : 'tutor');
     await refreshStudentOverview();
-    initTutor(); initReportStudio();
+    initTutor(); initReportStudio(); initApprovedReference(); initStudySprint(me.user?.id);
   }
   function selectTab(tab) {
-    const isTutor = tab === 'tutor';
-    $('#tutor-panel')?.classList.toggle('hidden', !isTutor);
-    $('#reports-panel')?.classList.toggle('hidden', isTutor);
-    $$('[data-tab]').forEach(button => button.classList.toggle('active', button.dataset.tab === tab));
-    const crumb = $('#breadcrumb-current'); if (crumb) crumb.textContent = isTutor ? 'VISUAL LEARNING' : 'REPORT STUDIO';
-    history.replaceState({}, '', isTutor ? '/app?tab=tutor' : '/app?tab=reports');
+    const panels = {tutor:'tutor-panel', reports:'reports-panel', reference:'reference-panel', focus:'focus-panel'};
+    const activeTab = panels[tab] ? tab : 'tutor';
+    Object.entries(panels).forEach(([key, id]) => document.getElementById(id)?.classList.toggle('hidden', key !== activeTab));
+    $$('[data-tab]').forEach(button => button.classList.toggle('active', button.dataset.tab === activeTab));
+    const crumb = $('#breadcrumb-current'); if (crumb) crumb.textContent = {tutor:'VISUAL LEARNING',reports:'REPORT STUDIO',reference:'APPROVED REFERENCE',focus:'STUDY SPRINT'}[activeTab];
+    if (location.protocol === 'http:' || location.protocol === 'https:') history.replaceState({}, '', '/app?tab=' + activeTab);
     $('.app-sidebar')?.classList.remove('mobile-open');
   }
   async function refreshStudentOverview() {
@@ -158,7 +161,7 @@
     chat.append(article);
     if (data.mermaid && window.mermaid && !/[<>]|script/i.test(data.mermaid)) {
       const target = $('.mermaid', article); target.textContent = data.mermaid;
-      window.mermaid.initialize({startOnLoad:false,theme:'dark',securityLevel:'strict',themeVariables:{background:'#101317',primaryColor:'#101317',primaryTextColor:'#EDE7DC',primaryBorderColor:'#E8913C',lineColor:'#2E6B72',secondaryColor:'#161B1D',tertiaryColor:'#101317',fontFamily:'Sora'}});
+      window.mermaid.initialize({startOnLoad:false,theme:'base',securityLevel:'strict',themeVariables:{primaryColor:'#eee9ff',primaryTextColor:'#4b4660',lineColor:'#9a8bd0',secondaryColor:'#e7f6ef',tertiaryColor:'#fff1e9',fontFamily:'DM Sans'}});
       window.mermaid.run({nodes:[target]}).catch(()=>{target.textContent='Diagram preview unavailable for this response.';});
     } else $('.diagram-wrap', article)?.classList.add('hidden');
     $$('.quiz-question', article).forEach((question, index) => {
@@ -181,6 +184,7 @@
     let latestCompletedJob = null;
     let lastDownloadUrls = {pdf:'',docx:''};
     let active = false;
+    const jobSession = {get: () => {try {return sessionStorage.getItem('lumidesk_report_job');}catch {return null;}}, set: v => {try {sessionStorage.setItem('lumidesk_report_job',v);}catch {}}, clear: () => {try {sessionStorage.removeItem('lumidesk_report_job');}catch {}}};
     const progressBox = $('#report-progress');
     const progressTitle = $('#progress-title');
     const progressDetail = $('#progress-detail');
@@ -260,7 +264,7 @@
     }
     async function waitForJob(jobId) {
       latestJobId = jobId;
-      sessionStorage.setItem('lumidesk_report_job', jobId);
+      jobSession.set(jobId);
       setBusy(true);
       errorBox?.classList.add('hidden');
       successBox?.classList.add('hidden');
@@ -277,7 +281,7 @@
           await sleep(2300);
         }
       } catch (error) {
-        if (error.status === 404) sessionStorage.removeItem('lumidesk_report_job');
+        if (error.status === 404) jobSession.clear();
         showError(error.message || 'The report could not be completed.');
       } finally {
         setBusy(false);
@@ -389,11 +393,8 @@
       finally { setBusy(false); }
     });
 
-    $('#download-again')?.addEventListener('click', () => {
-      if (!lastDownloadUrl) return;
-      const link = document.createElement('a');
-      link.href = lastDownloadUrl; link.download = 'LumiDesk_Report.pdf'; link.click();
-    });
+    $('#download-again')?.addEventListener('click', () => downloadFormat('pdf'));
+    $('#download-word')?.addEventListener('click', () => downloadFormat('docx'));
     $('#create-another')?.addEventListener('click', () => {
       if (active) return;
       form.reset(); input.value = '';
@@ -404,14 +405,130 @@
       errorBox?.classList.add('hidden');
       regenPanel?.classList.add('hidden');
       latestJobId = '';
-      sessionStorage.removeItem('lumidesk_report_job');
+      jobSession.clear();
       for (const kind of ['pdf','docx']) { if (lastDownloadUrls[kind]) { URL.revokeObjectURL(lastDownloadUrls[kind]); lastDownloadUrls[kind] = ''; } }
       latestCompletedJob = null;
     });
 
     // Refresh/reopen resumes polling for jobs still running in this Render process.
-    const pending = sessionStorage.getItem('lumidesk_report_job');
+    const pending = jobSession.get();
     if (pending) waitForJob(pending);
+  }
+
+  // Approved reference is intentionally independent of the new-project report form.
+  function initApprovedReference() {
+    const form = $('#approved-form'), fileInput = $('#approved-pdf');
+    if (!form || !fileInput) return;
+    const zone = $('#approved-upload-zone'), box = $('#approved-analysis');
+    const errorBox = $('#approved-error'), progress = $('#approved-progress'), result = $('#approved-result');
+    let running = false, job = null;
+    const reportError = message => {errorBox.textContent = message;errorBox.classList.remove('hidden');toast(message);};
+    const showProgress = (value, data) => {
+      running = value;
+      $('#approved-generate').disabled = value;
+      if ($('#approved-regenerate')) $('#approved-regenerate').disabled = value;
+      progress.classList.toggle('hidden', !value);
+      if (!data) return;
+      $('#approved-progress-title').textContent = data.status === 'queued' ? 'Your draft is queued…' : 'Preparing the reference-based report…';
+      $('#approved-progress-detail').textContent = data.detail || 'Working on your PDF';
+      $('#approved-progress-fill').style.width = `${data.total_sections ? Math.round(100*data.done_sections/data.total_sections) : 5}%`;
+    };
+    const onFile = async file => {
+      if (!file) return;
+      if (!file.name.toLowerCase().endsWith('.pdf') || file.size > 30 * 1024 * 1024) {
+        reportError('Choose a PDF no larger than 30 MB.'); fileInput.value = '';return;
+      }
+      $('#approved-file-name').textContent = `${file.name} · ${(file.size/1048576).toFixed(2)} MB`;
+      $('#approved-file-selected').classList.remove('hidden');
+      box.textContent = 'Inspecting the approved PDF…';box.classList.remove('hidden');
+      errorBox.classList.add('hidden');
+      try {
+        const data = new FormData(); data.set('file', file);
+        const res = await api('/api/reports/analyze', {method:'POST',body:data});
+        const info = await res.json();
+        box.innerHTML = `<b>${Number(info.page_count)} pages · ${Number(info.editable_line_count || 0)} editable lines</b><p>Topic: ${escapeHTML(info.source_title || 'Will be inferred from the report text')}</p><p>College: ${escapeHTML(info.institution || 'Preserved from the original')}</p><small>The source title and academic format are retained. Verify that images and results describe your work.</small>`;
+      } catch (e) {box.textContent = '';reportError(e.message || 'Could not inspect this PDF.');}
+    };
+    $('#approved-browse')?.addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', () => onFile(fileInput.files?.[0]));
+    $('#approved-remove')?.addEventListener('click', () => {fileInput.value='';box.classList.add('hidden');$('#approved-file-selected').classList.add('hidden');});
+    ['dragenter','dragover','drop'].forEach(type => zone?.addEventListener(type, e => {
+      e.preventDefault();
+      if (type === 'drop') {zone.classList.remove('dragover');if(e.dataTransfer.files?.length){fileInput.files=e.dataTransfer.files;onFile(fileInput.files[0]);}}
+      else zone.classList.add('dragover');
+    }));
+    zone?.addEventListener('dragleave', () => zone.classList.remove('dragover'));
+    async function poll(jobId) {
+      for (let attempt=0; attempt<500; attempt++) {
+        const response = await api(`/api/reports/jobs/${encodeURIComponent(jobId)}`);
+        const next = await response.json();showProgress(true,next);
+        if (next.status === 'failed') throw Error(next.error || 'Generation failed.');
+        if (next.status === 'completed') {
+          job = next;result.classList.remove('hidden');
+          const overlap = next.source_overlap_estimate == null ? '' : ` Estimated body-text overlap against the reference: ${(next.source_overlap_estimate*100).toFixed(1)}% (not a plagiarism score).`;
+          $('#approved-result-copy').textContent = `The report is ready to review.${overlap} Verify images, citations, dates and approval pages. ${next.warnings?.slice(0,2).join(' ') || ''}`;
+          $('#approved-download-word').disabled = !next.downloads?.docx;
+          $('#approved-regen-name').value = form.elements.student_name.value;
+          $('#approved-regen-usn').value = form.elements.usn.value;
+          return;
+        }
+        await new Promise(resolve => setTimeout(resolve, 2300));
+      }
+      throw Error('The job is taking unusually long. It may resume if the server is still processing; check back or try again.');
+    }
+    async function retrieve(format) {
+      if (!job?.downloads?.[format]) {reportError(`${format.toUpperCase()} is not available yet.`);return;}
+      try {
+        const resp = await api(job.downloads[format]);const blob = await resp.blob();
+        if (blob.size<100) throw Error('Generated file is unexpectedly small.');
+        const url=URL.createObjectURL(blob);
+        const filename = (resp.headers.get('content-disposition')||'').match(/filename="?([^";]+)/i)?.[1] || `Reference_Draft.${format}`;
+        const a=document.createElement('a');a.href=url;a.download=filename;document.body.append(a);a.click();a.remove();
+        setTimeout(()=>URL.revokeObjectURL(url),60000);
+      } catch(e) {reportError(e.message);}
+    }
+    $('#approved-download-pdf')?.addEventListener('click', ()=>retrieve('pdf'));
+    $('#approved-download-word')?.addEventListener('click', ()=>retrieve('docx'));
+    form.addEventListener('submit', async event => {
+      event.preventDefault();if(running)return;
+      if(!fileInput.files?.[0]) {reportError('Upload the approved PDF first.');return;}
+      errorBox.classList.add('hidden');result.classList.add('hidden');showProgress(true);
+      try {const data=new FormData(form);data.set('file',fileInput.files[0]);
+        const res=await api('/api/reports/approved/start',{method:'POST',body:data});
+        await poll((await res.json()).job_id);
+      } catch(e) {reportError(e.message || 'Could not generate the draft.');}
+      finally {showProgress(false);}
+    });
+    $('#approved-regenerate')?.addEventListener('click', async()=>{
+      if(running||!job?.job_id)return;
+      const name=$('#approved-regen-name').value.trim(),usn=$('#approved-regen-usn').value.trim();
+      if(name.length<2||usn.length<2) {reportError('Enter a valid student name and USN.');return;}
+      errorBox.classList.add('hidden');showProgress(true);
+      try {const data=new FormData();data.set('student_name',name);data.set('usn',usn);
+        const res=await api(`/api/reports/jobs/${encodeURIComponent(job.job_id)}/regenerate`,{method:'POST',body:data});
+        await poll((await res.json()).job_id);
+      } catch(e) {reportError(e.message || 'Regeneration failed.');}
+      finally {showProgress(false);}
+    });
+  }
+
+  // Fully offline-friendly personal study sprint; does not consume AI quota.
+  function initStudySprint(userId) {
+    const clock=$('#sprint-clock'),list=$('#study-task-list'),form=$('#study-task-form');
+    if(!clock||!list||!form)return;
+    let breakMode=false,remaining=25*60,running=false,deadline=0,handle=null;
+    const draw=()=>{clock.textContent=`${String(Math.floor(remaining/60)).padStart(2,'0')}:${String(remaining%60).padStart(2,'0')}`;$('#sprint-mode').textContent=breakMode?'SHORT BREAK':'FOCUS SESSION';$('#sprint-start').textContent=running?'Pause':'Start '+(breakMode?'break':'focus');};
+    function tick(){remaining=Math.max(0,Math.ceil((deadline-Date.now())/1000));draw();if(remaining===0){stop();$('#sprint-message').textContent='Session complete! Take a moment to reflect.';}}
+    function stop(){running=false;clearInterval(handle);handle=null;draw();}
+    $('#sprint-start').addEventListener('click',()=>{if(running){tick();stop();return;}running=true;deadline=Date.now()+remaining*1000;handle=setInterval(tick,300);draw();});
+    $('#sprint-reset').addEventListener('click',()=>{stop();remaining=(breakMode?5:25)*60;draw();$('#sprint-message').textContent='Timer reset.';});
+    $('#sprint-switch').addEventListener('click',()=>{stop();breakMode=!breakMode;remaining=(breakMode?5:25)*60;draw();});draw();
+    const key=`lumidesk-study-steps-${String(userId||'local')}`;
+    let tasks=[];try{const saved=JSON.parse(localStorage.getItem(key)||'[]');if(Array.isArray(saved))tasks=saved.slice(0,30).filter(x=>typeof x?.title==='string');}catch{}
+    const save=()=>{try{localStorage.setItem(key,JSON.stringify(tasks));}catch{}};
+    function paint(){list.replaceChildren();for(const task of tasks){const li=document.createElement('li');const label=document.createElement('label');const check=document.createElement('input');check.type='checkbox';check.checked=!!task.done;const span=document.createElement('span');span.textContent=task.title;label.append(check,span);li.append(label);list.append(li);check.addEventListener('change',()=>{task.done=check.checked;save();paint();});}if(!tasks.length){const li=document.createElement('li');li.className='task-empty';li.textContent='Your list is empty. Add one achievable study step.';list.append(li);}}
+    form.addEventListener('submit',e=>{e.preventDefault();const field=$('#study-task-input');const title=field.value.trim();if(!title)return;if(tasks.length>=30){toast('Keep your plan to 30 steps or fewer.');return;}tasks.push({title,done:false});field.value='';save();paint();});
+    $('#study-clear-done').addEventListener('click',()=>{tasks=tasks.filter(t=>!t.done);save();paint();});paint();
   }
 
   // Admin console is server-gated; the browser never grants a role.

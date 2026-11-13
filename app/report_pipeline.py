@@ -172,7 +172,7 @@ def _official_draft_replacements(page: dict, page_index: int, old: dict, title: 
     wrapped = _wrap_for_existing_lines(text, body)
     return {(page_index, block["block_id"]): line for block, line in zip(body, wrapped)}
 
-def static_replacements(template: dict, old: dict, title: str, name: str, usn: str) -> dict:
+def static_replacements(template: dict, old: dict, title: str, name: str, usn: str, *, preserve_references: bool = False) -> dict:
     """Change only title/identity occurrences; do not rewrite institutional lines."""
     substitutions = {}
     old_title = old.get("source_title", "")
@@ -194,15 +194,16 @@ def static_replacements(template: dict, old: dict, title: str, name: str, usn: s
                 updated = re.sub(re.escape(old_usn), lambda _: usn, updated, flags=re.I)
             if updated != raw:
                 substitutions[(idx, block["block_id"])] = updated
-        if section_of(page) in ("references", "bibliography"):
+        if not preserve_references and section_of(page) in ("references", "bibliography"):
             # New references cannot be responsibly invented from a title alone.
             for block in page["blocks"]:
                 match = re.match(r"^(\d+)[.)]\s+", block["text"])
                 if match and block["rect"][1] > 90:
                     substitutions[(idx, block["block_id"])] = f"{match.group(1)}. [Add a verified reference for the new project]"
                 elif 90 < block["rect"][1] < page["height"] - 65 and len(block["text"]) > 18:
-                    # Preserve visible reference placeholders instead of wiping the page.
-                    # Source citations must be verified by the student; never invent them.
+                    # Preserve the reference row instead of redacting the entire
+                    # paragraph. We cannot verify sources from a project title,
+                    # but a visible placeholder is safer than a blank page.
                     substitutions[(idx, block["block_id"])] = "[Source details to verify before submission]"
         if section_of(page) == "photographs":
             for block in page["blocks"]:
@@ -211,8 +212,8 @@ def static_replacements(template: dict, old: dict, title: str, name: str, usn: s
     return substitutions
 
 
-def build_plan(template: dict, old: dict, title: str, name: str, usn: str, ai_pages: list[dict]) -> dict:
-    updates = static_replacements(template, old, title, name, usn)
+def build_plan(template: dict, old: dict, title: str, name: str, usn: str, ai_pages: list[dict], *, preserve_references: bool = False) -> dict:
+    updates = static_replacements(template, old, title, name, usn, preserve_references=preserve_references)
     approved = {(item["page_index"], slot["block_id"]): slot for item in content_slots(template) for slot in item["slots"]}
     rejected = 0
     for page in ai_pages:
@@ -236,3 +237,36 @@ def build_plan(template: dict, old: dict, title: str, name: str, usn: str, ai_pa
         "planned_body_slots": len(approved),
         "rewritten_body_slots": sum(key in approved for key in updates),
     }
+
+
+def extract_approved_reference_context(template: dict, old: dict) -> tuple[str, str]:
+    """Derive topic context from a permissioned reference without changing the topic.
+
+    Only context from Abstract/Introduction/body sections is used; institutional
+    identities, signatures, student numbers and credentials aren't part of the prompt.
+    Generated content must still be reviewed for factual accuracy by its author.
+    """
+    source_title = old.get('source_title', '').strip()
+    title = source_title if len(source_title) >= 4 else 'Student Academic Report'
+    body = []
+    # Abstract/Introduction communicate the subject better than metadata and citations.
+    preferred = ('Abstract', 'Introduction', 'Description of the Activity', 'Objectives')
+    for slot_page in content_slots(template):
+        if slot_page['section'] not in preferred:
+            continue
+        snippets = [slot.get('sample', '') for slot in slot_page['slots']]
+        paragraph = ' '.join(snippets)
+        if paragraph:
+            body.append(paragraph)
+        if sum(len(x) for x in body) >= 1800:
+            break
+    if not body:
+        for slot_page in content_slots(template)[:3]:
+            body.append(' '.join(slot.get('sample', '') for slot in slot_page['slots']))
+    topic = ('Reference topic: ' + title + '. Source description for context only: ' +
+             ' '.join(body))[:3000]
+    # Never send a friend's identity, registration number or password to the AI.
+    for value in (old.get('source_name', ''), old.get('source_usn', '')):
+        if value and len(value) >= 3:
+            topic = re.sub(re.escape(value), '[student identity omitted]', topic, flags=re.I)
+    return title, topic
