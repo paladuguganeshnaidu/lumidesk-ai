@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+import asyncio
+import logging
 import re
 import secrets
 from datetime import datetime, timezone, timedelta
@@ -22,9 +24,10 @@ from sqlalchemy.orm import Session
 from starlette.background import BackgroundTask
 from starlette.middleware.sessions import SessionMiddleware
 
-from .ai import AIUnavailable, report_plan, tutor_response
+from .ai import AIUnavailable, rewrite_report_pages, tutor_response
 from .db import ReportRecord, UsageEvent, User, daily_count, get_db, init_db, record_usage, upsert_user
 from .pdf_engine import inspect_pdf, render_replacement_pdf
+from .report_pipeline import extract_template_details, content_slots, build_plan
 from .security import csrf_token, current_user, require_admin, require_csrf
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -178,98 +181,103 @@ async def api_tutor(payload: TutorInput, request: Request, db: Session = Depends
     return {"result": result, "usage": {"used": used + 1, "limit": TUTOR_LIMIT}}
 
 
+async def _read_report_upload(file: UploadFile) -> bytes:
+    if file.content_type != "application/pdf" and not (file.filename or "").lower().endswith(".pdf"):
+        raise HTTPException(status_code=415, detail="Please upload a PDF reference document.")
+    source = await file.read(MAX_UPLOAD_MB * 1024 * 1024 + 1)
+    if len(source) > MAX_UPLOAD_MB * 1024 * 1024:
+        raise HTTPException(status_code=413, detail=f"The selected PDF is larger than {MAX_UPLOAD_MB} MB.")
+    if not source.startswith(b"%PDF-"):
+        raise HTTPException(status_code=422, detail="This is not a readable PDF document.")
+    return source
+
+
+def _read_template(source: bytes) -> dict:
+    try:
+        document, template = inspect_pdf(source)
+        document.close()
+        return template
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc:
+        logging.exception("PDF template analysis failed")
+        raise HTTPException(status_code=422, detail="The PDF could not be analyzed. Try an unlocked text-based document.") from exc
+
+
+@app.post("/api/reports/analyze")
+async def analyze_report_template(request: Request, file: UploadFile = File(...)):
+    require_csrf(request)
+    current_user(request)
+    source = await _read_report_upload(file)
+    template = _read_template(source)
+    result = extract_template_details(template)
+    slots = content_slots(template)
+    result["editable_sections"] = [
+        {"page": p["page_index"] + 1, "name": p["section"], "lines": len(p["slots"])}
+        for p in slots
+    ]
+    result["editable_line_count"] = sum(len(p["slots"]) for p in slots)
+    result["note"] = "The uploaded PDF controls the report's format, headings and institution information."
+    return result
+
+
 @app.post("/api/reports/generate")
 async def api_generate_report(
     request: Request,
     file: UploadFile = File(...),
-    title: str = Form(..., max_length=180),
-    topic: str = Form(..., max_length=3000),
-    student_name: str = Form(..., max_length=140),
-    institution: str = Form("", max_length=180),
-    department: str = Form("", max_length=180),
-    guide: str = Form("", max_length=140),
-    instructions: str = Form("", max_length=3000),
+    title: str = Form(..., min_length=4, max_length=180),
+    topic: str = Form(..., min_length=20, max_length=3000),
+    student_name: str = Form(..., min_length=2, max_length=140),
+    usn: str = Form(..., min_length=2, max_length=32),
     db: Session = Depends(get_db),
 ):
     require_csrf(request)
     user = current_user(request)
     used = daily_count(db, user["id"], "report")
     if REPORT_LIMIT > 0 and used >= REPORT_LIMIT:
-        raise HTTPException(status_code=429, detail=f"You've reached today's report limit ({REPORT_LIMIT}).")
-    if file.content_type != "application/pdf" and not (file.filename or "").lower().endswith(".pdf"):
-        raise HTTPException(status_code=415, detail="Upload a PDF reference template.")
-    source = await file.read((MAX_UPLOAD_MB * 1024 * 1024) + 1)
-    if len(source) > MAX_UPLOAD_MB * 1024 * 1024:
-        raise HTTPException(status_code=413, detail=f"PDF exceeds the {MAX_UPLOAD_MB} MB upload limit.")
+        raise HTTPException(status_code=429, detail="The configured daily report limit was reached.")
+    title, topic, student_name, usn = title.strip(), topic.strip(), student_name.strip(), usn.strip()
+    if not all((title, topic, student_name, usn)):
+        raise HTTPException(status_code=422, detail="Enter your project title, what it does, your name, and your USN.")
+    source = await _read_report_upload(file)
+    template = _read_template(source)
+    analysis = extract_template_details(template)
+    sections = content_slots(template)
+    if not sections:
+        raise HTTPException(status_code=422, detail="No editable body sections were recognized. Use a selectable-text report with headings.")
     try:
-        doc, template = inspect_pdf(source)
-        doc.close()
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    # Remove original body text before sending structural data to the model.
-    structural_pages = []
-    for page in template["pages"]:
-        structural_blocks = []
-        for block in page["blocks"]:
-            source_label = block["text"].strip()
-            lowered = source_label.lower()
-            normalized_heading = re.sub(r"[^a-z0-9 ]", "", lowered).strip()
-            generic_headings = {
-                "abstract", "acknowledgement", "acknowledgment", "declaration", "certificate",
-                "introduction", "problem statement", "objectives", "scope", "literature review",
-                "related work", "methodology", "system design", "architecture", "implementation",
-                "results", "discussion", "conclusion", "future work", "references", "bibliography",
-                "appendix", "annexure", "contents", "table of contents",
-            }
-            is_heading = len(source_label) <= 90 and (source_label.isupper() or float(block["font_size"]) >= 12.5)
-            if any(word in lowered for word in ("signature", "approved", "certified", "certificate", "principal", "examiner")):
-                role = "approval_or_signature_placeholder"
-                label = "Authorized approval/signature area"
-            elif is_heading and normalized_heading in generic_headings:
-                role = "heading"
-                label = normalized_heading.title()
-            elif is_heading and page["page_index"] == 0:
-                role = "cover_title"
-                label = "New project title field"
-            elif is_heading:
-                role = "section_heading"
-                label = "Section heading"
-            elif len(source_label) <= 55 and page["page_index"] == 0:
-                role = "cover_metadata"
-                label = "Student/institution metadata field"
-            else:
-                role = "body_text"
-                label = "Original body text omitted; write new content for the requested project."
-            structural_blocks.append({
-                "block_id": block["block_id"],
-                "role": role,
-                "structural_label": label,
-                "rect": block["rect"],
-                "font_size": block["font_size"],
-                "character_budget": min(500, max(28, len(source_label))),
-            })
-        structural_pages.append({
-            "page_index": page["page_index"],
-            "width": page["width"], "height": page["height"],
-            "image_count": page["image_count"],
-            "blocks": structural_blocks,
-        })
-    try:
-        plan = await report_plan(topic=topic, title=title, student=student_name, institution=institution, department=department, guide=guide, instructions=instructions, template={"page_count": template["page_count"], "pages": structural_pages})
-        output, warnings = render_replacement_pdf(source, template, plan)
+        # Section-by-section context avoids truncating one giant model response.
+        generated = await asyncio.wait_for(
+            rewrite_report_pages(title=title, topic=topic, sections=sections), timeout=155
+        )
+        plan = build_plan(template, analysis, title, student_name, usn, generated)
+        if plan["rewritten_body_slots"] != plan["planned_body_slots"] or plan["rejected_ai_slots"]:
+            raise ValueError("Some body lines could not fit their original spaces. Retry with a clearer project description.")
+        output, fit_warnings = render_replacement_pdf(source, template, plan)
     except AIUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except asyncio.TimeoutError as exc:
+        raise HTTPException(status_code=504, detail="This report took longer than the free server allows. Retry with a shorter template.") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     except Exception as exc:
-        raise HTTPException(status_code=502, detail="The report agent could not complete this template. Try a simpler text-based PDF.") from exc
-    record = ReportRecord(user_id=user["id"], title=title, pages=template["page_count"], status="completed")
+        logging.exception("Template-aware report generation failed")
+        raise HTTPException(status_code=502, detail="The report could not be completed and verified. No incomplete PDF was returned. Please retry.") from exc
+    record = ReportRecord(user_id=user["id"], title=title,
+                          pages=template["page_count"], status="completed")
     db.add(record)
     record_usage(db, user["id"], "report", title)
     db.commit()
     safe_name = "".join(c for c in title if c.isalnum() or c in " -_").strip().replace(" ", "_")[:50] or "Student_Report"
     import urllib.parse, json
-    headers = {"Content-Disposition": f'attachment; filename="{safe_name}_LumiDesk.pdf"', "X-Report-Warnings": str(len(warnings)), "X-Report-Warning-Details": urllib.parse.quote(json.dumps(warnings, ensure_ascii=False))}
-    # Warnings are surfaced in a response header and included in a sidecar JSON header only as a count;
-    # the client receives detailed fit warnings through the response metadata endpoint in a later iteration.
+    warnings = (analysis["warnings"]
+                + ["Replace original evidence photos and verify new-project references. Faculty approvals require authorization."]
+                + fit_warnings)
+    headers = {
+        "Content-Disposition": f'attachment; filename="{safe_name}_LumiDesk.pdf"',
+        "X-Report-Warnings": str(len(warnings)),
+        "X-Report-Warning-Details": urllib.parse.quote(json.dumps(warnings[:12], ensure_ascii=False)),
+    }
     return Response(content=output, media_type="application/pdf", headers=headers)
 
 
