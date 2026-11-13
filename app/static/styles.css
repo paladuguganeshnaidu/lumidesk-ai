@@ -24,3 +24,13 @@
 .template-analysis p{margin:6px 0 0;color:#777086;overflow-wrap:anywhere}
 .template-analysis small{display:block;margin-top:10px;font-size:9px;color:#8d86a1}
 @media(max-width:760px){.template-analysis{margin-left:14px;margin-right:14px}}
+
+/* Long-running report generation and privacy-preserving regeneration */
+.report-progress-track{width:100%;height:6px;background:#e6e0f4;border-radius:20px;overflow:hidden;margin-top:9px}
+.report-progress-track span{display:block;width:0;height:100%;background:linear-gradient(90deg,#af9ae9,#8570d4);transition:width .25s}
+.regenerate-panel{margin:24px auto 18px;padding:18px;width:min(100%,470px);text-align:left;background:#f9f6ff;border:1px solid #eae5f8;border-radius:18px}
+.regenerate-panel h4{font-size:15px;font-weight:800;margin:0 0 4px;color:#37324c}
+.regenerate-panel p{font-size:11px;line-height:1.6;color:#858096;margin:0 0 14px;max-width:none}
+.regenerate-fields{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px}
+.regenerate-panel .button{width:100%;justify-content:center}
+@media(max-width:530px){.regenerate-fields{grid-template-columns:1fr}}

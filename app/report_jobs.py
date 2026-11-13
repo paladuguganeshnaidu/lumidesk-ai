@@ -1,0 +1,219 @@
+"""Bounded background report jobs for long-running, template-preserving PDF creation.
+
+This is intentionally a *single-worker* free-tier implementation. Queued tasks
+and output are held in process memory with a one-hour expiry, not an enterprise
+job queue. A Render restart can interrupt a job. Clients receive truthful
+progress and can retry from the original PDF.
+"""
+from __future__ import annotations
+
+import asyncio
+import logging
+import re
+import secrets
+import time
+from dataclasses import dataclass, field
+from typing import Any
+
+import pymupdf
+
+from .ai import rewrite_report_pages
+from .db import ReportRecord, SessionLocal, record_usage
+from .pdf_engine import inspect_pdf, render_replacement_pdf
+from .report_pipeline import build_plan, content_slots, extract_template_details
+
+KEEP_SECONDS = 60 * 60
+MAX_JOBS = 8
+MAX_USER_JOBS = 4
+MAX_ACTIVE_JOBS = 2
+jobs: dict[str, ReportJob] = {}
+active_gate = asyncio.Semaphore(MAX_ACTIVE_JOBS)
+
+
+@dataclass
+class ReportJob:
+    id: str
+    user_id: int
+    source: bytes
+    title: str
+    topic: str
+    student_name: str
+    usn: str
+    variant: int = 0
+    parent_id: str | None = None
+    created_at: float = field(default_factory=time.time)
+    status: str = 'queued'
+    detail: str = 'Your report has been queued for generation.'
+    done_sections: int = 0
+    total_sections: int = 0
+    result: bytes | None = None
+    pages: list[dict] | None = None
+    warnings: list[str] = field(default_factory=list)
+    overlap: float | None = None
+    error: str | None = None
+    task: asyncio.Task | None = field(default=None, repr=False)
+
+
+def _prune() -> None:
+    now = time.time()
+    expired = [job_id for job_id, job in jobs.items()
+               if job.status in ('completed', 'failed') and now - job.created_at > KEEP_SECONDS]
+    for job_id in expired:
+        jobs.pop(job_id, None)
+
+
+def for_user(job_id: str, user_id: int) -> ReportJob | None:
+    _prune()
+    job = jobs.get(job_id)
+    return job if job and job.user_id == user_id else None
+
+
+def _comparison(a: list[dict], b: list[dict]) -> float:
+    """4-word shingle Jaccard overlap of revised body sections, not plagiarism detection."""
+    def text(pages):
+        return ' '.join(str(x.get('text', '')) for p in pages for x in p.get('blocks', []))
+    def shingles(value):
+        words = re.findall(r"[\w']+", value.lower())
+        return set(tuple(words[i:i+4]) for i in range(max(0, len(words)-3)))
+    left, right = shingles(text(a)), shingles(text(b))
+    return round(len(left & right) / max(1, len(left | right)), 4)
+
+
+def create_job(*, user_id: int, source: bytes, title: str, topic: str,
+               student_name: str, usn: str, parent: ReportJob | None = None) -> ReportJob:
+    _prune()
+    user_jobs = [j for j in jobs.values() if j.user_id == user_id]
+    active = [j for j in jobs.values() if j.status in ('queued', 'running')]
+    if len(active) >= MAX_ACTIVE_JOBS or sum(j.status in ('queued', 'running') for j in user_jobs) >= 1:
+        raise ValueError('A report is already being generated. Finish that report before starting another.')
+    while len(jobs) >= MAX_JOBS or len(user_jobs) >= MAX_USER_JOBS:
+        removable = sorted((j for j in jobs.values() if j.status not in ('queued', 'running')),
+                           key=lambda j: j.created_at)
+        if not removable:
+            raise ValueError('The report processor is at capacity; please try again shortly.')
+        old = removable[0]
+        jobs.pop(old.id, None)
+        user_jobs = [j for j in jobs.values() if j.user_id == user_id]
+    job = ReportJob(
+        id=secrets.token_urlsafe(18), user_id=user_id, source=source,
+        title=title, topic=topic, student_name=student_name, usn=usn,
+        parent_id=parent.id if parent else None, variant=(parent.variant + 1) if parent else 0,
+    )
+    jobs[job.id] = job
+    job.task = asyncio.create_task(run_job(job))
+    return job
+
+
+def public_job(job: ReportJob) -> dict[str, Any]:
+    return {
+        'job_id': job.id, 'status': job.status, 'detail': job.detail,
+        'done_sections': job.done_sections, 'total_sections': job.total_sections,
+        'pages': job.total_sections, 'warnings': job.warnings[:14],
+        'overlap_estimate': job.overlap,
+        'download_url': f'/api/reports/jobs/{job.id}/download' if job.status == 'completed' else None,
+        'regenerate_url': f'/api/reports/jobs/{job.id}/regenerate' if job.status == 'completed' else None,
+        'error': job.error,
+        'temporary': True,
+    }
+
+
+async def run_job(job: ReportJob) -> None:
+    async with active_gate:
+        job.status = 'running'
+        job.detail = 'Reading the original PDF and mapping its sections…'
+        try:
+            # PDF operations are CPU-heavy; keep the web server responsive to polls.
+            def inspect():
+                document, template = inspect_pdf(job.source)
+                document.close()
+                return template
+            template = await asyncio.to_thread(inspect)
+            analysis = extract_template_details(template)
+            sections = content_slots(template)
+            job.total_sections = len(sections)
+            parent = jobs.get(job.parent_id) if job.parent_id else None
+            if parent and parent.user_id != job.user_id:
+                parent = None
+            previous = parent.pages if parent else None
+
+            def update_progress(done: int, total: int) -> None:
+                job.done_sections = done
+                job.total_sections = total
+                job.detail = f'Writing report sections: {done} of {total} processed…'
+
+            if sections:
+                generated = await rewrite_report_pages(
+                    title=job.title, topic=job.topic, sections=sections,
+                    variant_seed=job.variant, previous_pages=previous, progress=update_progress,
+                )
+                job.warnings.extend(w for p in generated for w in p.get('warnings', []))
+                fallbacks = sum(int(p.get('fallback_count', 0)) for p in generated)
+                if fallbacks:
+                    job.warnings.append(
+                        f'{fallbacks} text lines used a topic-based draft fallback after missing or invalid AI output. Review these sections carefully.'
+                    )
+                if previous:
+                    job.overlap = _comparison(generated, previous)
+                    if job.overlap > .30:
+                        job.detail = 'Checking a more distinct writing variant…'
+                        alternate = await rewrite_report_pages(
+                            title=job.title, topic=job.topic, sections=sections,
+                            variant_seed=job.variant + 7, previous_pages=previous,
+                            progress=update_progress,
+                        )
+                        alternative_overlap = _comparison(alternate, previous)
+                        if alternative_overlap < job.overlap:
+                            generated = alternate
+                            job.overlap = alternative_overlap
+                            job.warnings.extend(w for p in alternate for w in p.get('warnings', []))
+                            fallbacks = sum(int(p.get('fallback_count', 0)) for p in alternate)
+                            if fallbacks:
+                                job.warnings.append(f'{fallbacks} replacement lines need review because they used draft fallback wording.')
+                    if job.overlap > .30:
+                        job.warnings.append(
+                            'Measured body-text 4-word-shingle overlap exceeds the requested 30% target. '
+                            'This estimate is not a plagiarism or originality certificate.'
+                        )
+            else:
+                generated = []
+                job.warnings.append('No safe body-text regions were detected; only identified title and student details were changed.')
+            job.detail = 'Fitting replacement text into the existing PDF layout…'
+            plan = build_plan(template, analysis, job.title, job.student_name, job.usn, generated)
+            if plan['rewritten_body_slots'] != plan['planned_body_slots'] or plan['rejected_ai_slots']:
+                # Do not pass through incomplete model output as if it were verified.
+                job.warnings.append('Some text areas needed review after the layout-fitting check.')
+            def render():
+                return render_replacement_pdf(job.source, template, plan)
+            result, warnings = await asyncio.to_thread(render)
+            # Verify the final file, rather than treating a model response as a PDF.
+            with pymupdf.open(stream=result, filetype='pdf') as final:
+                if len(final) != template['page_count']:
+                    raise ValueError('The reconstructed document had a different page count.')
+                if final.is_encrypted or not result.startswith(b'%PDF-'):
+                    raise ValueError('The reconstructed file was not a valid readable PDF.')
+            job.warnings.extend(analysis.get('warnings', []))
+            job.warnings.extend(warnings)
+            job.warnings.append('Review facts and verify any original photographs, certificates, signatures and references before submission.')
+            job.result = result
+            job.pages = generated
+            job.done_sections = job.total_sections
+            job.detail = 'PDF ready. Review the draft before submission.'
+            job.status = 'completed'
+            try:
+                with SessionLocal() as db:
+                    db.add(ReportRecord(user_id=job.user_id, title=job.title,
+                                        pages=template['page_count'], status='completed'))
+                    record_usage(db, job.user_id, 'report', job.title[:240])
+                    db.commit()
+            except Exception:
+                logging.exception('Report complete, but analytics database could not be updated')
+                job.warnings.append('Analytics could not be saved; the downloadable PDF is unaffected.')
+        except asyncio.CancelledError:
+            job.status = 'failed'
+            job.error = 'The server interrupted generation. Please restart using the source PDF.'
+            raise
+        except Exception as exc:
+            logging.exception('Background report generation failed: %s', job.id)
+            job.status = 'failed'
+            job.error = 'This PDF could not be safely processed. Try an unlocked, selectable-text PDF.'
+            job.detail = f'Generation stopped: {type(exc).__name__}'

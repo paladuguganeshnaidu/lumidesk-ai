@@ -126,8 +126,8 @@
   function setUsage(prefix, used, limit) {
     const value = $(`#${prefix}-usage`), total = $(`#${prefix}-limit`), bar = $(`#${prefix}-usage-bar`);
     if (value) value.textContent = used;
-    if (total) total.textContent = Number(limit) === 0 ? '∞' : limit;
-    if (bar) bar.style.width = `${Math.min(100, limit > 0 ? used / limit * 100 : 0)}%`;
+    if (total) total.textContent = limit;
+    if (bar) bar.style.width = `${Math.min(100, limit ? used / limit * 100 : 0)}%`;
   }
   function initTutor() {
     const form = $('#tutor-form'), input = $('#tutor-message'), chat = $('#chat-area');
@@ -173,67 +173,212 @@
     chat.scrollTop = chat.scrollHeight;
   }
   function initReportStudio() {
-    const input = $('#reference-pdf'), zone = $('#upload-zone'), form = $('#report-form'); if (!input || !zone || !form) return;
+    const input = $('#reference-pdf');
+    const zone = $('#upload-zone');
+    const form = $('#report-form');
+    if (!input || !zone || !form) return;
+    let latestJobId = '';
+    let lastDownloadUrl = '';
+    let active = false;
+    const progressBox = $('#report-progress');
+    const progressTitle = $('#progress-title');
+    const progressDetail = $('#progress-detail');
+    const errorBox = $('#report-error');
+    const successBox = $('#report-success');
+    const generateButton = $('#generate-report');
+    const regenerateButton = $('#regenerate-report');
+    const regenPanel = $('#regenerate-panel');
+    const successText = $('#report-success-copy');
+    const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+    function setBusy(value) {
+      active = value;
+      generateButton.disabled = value;
+      if (regenerateButton) regenerateButton.disabled = value;
+      progressBox?.classList.toggle('hidden', !value);
+    }
+    function showError(message) {
+      if (errorBox) {
+        errorBox.textContent = message;
+        errorBox.classList.remove('hidden');
+      }
+      toast(message);
+    }
+    function updateProgress(job) {
+      if (progressTitle) progressTitle.textContent = job.status === 'queued' ?
+        'Your document is queued…' : 'Rebuilding the original PDF layout…';
+      const fraction = job.total_sections > 0 ?
+        ` (${job.done_sections || 0}/${job.total_sections} sections)` : '';
+      if (progressDetail) progressDetail.textContent = `${job.detail || 'Working on your report…'}${fraction}`;
+      const bar = $('#report-progress-fill');
+      if (bar && job.total_sections) bar.style.width = `${Math.round((job.done_sections || 0) / job.total_sections * 100)}%`;
+    }
+    async function download(job) {
+      const response = await api(job.download_url || `/api/reports/jobs/${job.job_id}/download`);
+      const blob = await response.blob();
+      if (blob.type && !blob.type.includes('pdf')) throw new Error('The download was not a PDF. Please retry.');
+      if (blob.size < 100) throw new Error('The generated PDF is unexpectedly small.');
+      if (lastDownloadUrl) URL.revokeObjectURL(lastDownloadUrl);
+      lastDownloadUrl = URL.createObjectURL(blob);
+      const raw = response.headers.get('content-disposition') || '';
+      const filename = raw.match(/filename="?([^";]+)"?/i)?.[1] || 'LumiDesk_Report.pdf';
+      const anchor = document.createElement('a');
+      anchor.href = lastDownloadUrl;
+      anchor.download = filename;
+      document.body.append(anchor);
+      anchor.click();
+      anchor.remove();
+      successBox?.classList.remove('hidden');
+      if (regenPanel) regenPanel.classList.remove('hidden');
+      const warnings = Array.isArray(job.warnings) ? job.warnings : [];
+      const overlap = job.overlap_estimate === null || job.overlap_estimate === undefined ?
+        '' : ` Estimated 4-word overlap with the previous draft: ${(Number(job.overlap_estimate) * 100).toFixed(1)}% (not a plagiarism score).`;
+      if (successText) successText.textContent =
+        `Your ${job.pages || 'multi-page'}-section report is ready.${overlap} ` +
+        (warnings.length ? `Review required: ${warnings.slice(0, 2).join(' ')}` :
+          'Review source evidence, accuracy and formatting before academic submission.');
+      const name = form.querySelector('[name="student_name"]');
+      const usn = form.querySelector('[name="usn"]');
+      if ($('#regen-name') && name) $('#regen-name').value = name.value;
+      if ($('#regen-usn') && usn) $('#regen-usn').value = usn.value;
+      await refreshStudentOverview();
+      toast('Your PDF draft has downloaded. You can regenerate another variant below.');
+    }
+    async function waitForJob(jobId) {
+      latestJobId = jobId;
+      sessionStorage.setItem('lumidesk_report_job', jobId);
+      setBusy(true);
+      errorBox?.classList.add('hidden');
+      successBox?.classList.add('hidden');
+      try {
+        for (;;) {
+          const response = await api(`/api/reports/jobs/${encodeURIComponent(jobId)}`);
+          const job = await response.json();
+          updateProgress(job);
+          if (job.status === 'completed') {
+            await download(job);
+            return;
+          }
+          if (job.status === 'failed') throw new Error(job.error || 'The PDF could not be created from this file.');
+          await sleep(2300);
+        }
+      } catch (error) {
+        if (error.status === 404) sessionStorage.removeItem('lumidesk_report_job');
+        showError(error.message || 'The report could not be completed.');
+      } finally {
+        setBusy(false);
+      }
+    }
+
     $('#browse-pdf')?.addEventListener('click', () => input.click());
     input.addEventListener('change', () => showSelectedFile(input.files?.[0]));
-    $('#remove-file')?.addEventListener('click', () => { input.value=''; $('#file-selected')?.classList.add('hidden'); $('#template-analysis')?.classList.add('hidden'); });
-    ['dragenter','dragover'].forEach(type => zone.addEventListener(type, e => {e.preventDefault();zone.classList.add('dragover');}));
-    ['dragleave','drop'].forEach(type => zone.addEventListener(type, e => {e.preventDefault();zone.classList.remove('dragover');}));
-    zone.addEventListener('drop', e => {const f=e.dataTransfer.files?.[0];if(f){input.files=e.dataTransfer.files;showSelectedFile(f);}});
+    $('#remove-file')?.addEventListener('click', () => {
+      input.value = '';
+      $('#file-selected')?.classList.add('hidden');
+      $('#template-analysis')?.classList.add('hidden');
+    });
+    ['dragenter', 'dragover'].forEach(type => zone.addEventListener(type, e => {
+      e.preventDefault(); zone.classList.add('dragover');
+    }));
+    ['dragleave', 'drop'].forEach(type => zone.addEventListener(type, e => {
+      e.preventDefault(); zone.classList.remove('dragover');
+    }));
+    zone.addEventListener('drop', e => {
+      const file = e.dataTransfer.files?.[0];
+      if (file) { input.files = e.dataTransfer.files; showSelectedFile(file); }
+    });
+
     async function showSelectedFile(file) {
       if (!file) return;
       if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
-        toast('Please select a PDF file.'); input.value=''; return;
+        showError('Please upload a PDF file.'); input.value = ''; return;
       }
-      $('#file-name').textContent = file.name + ' · ' + (file.size/1024/1024).toFixed(1) + ' MB';
+      if (file.size > 30 * 1024 * 1024) {
+        showError('This PDF is larger than the 30 MB free-tier file limit.'); input.value = ''; return;
+      }
+      $('#file-name').textContent = `${file.name} · ${(file.size / 1048576).toFixed(1)} MB`;
       $('#file-selected')?.classList.remove('hidden');
       const summary = $('#template-analysis');
-      if (summary) { summary.textContent='Reading the report format…'; summary.classList.remove('hidden'); }
+      if (summary) { summary.textContent = 'Checking the reference layout and headings…'; summary.classList.remove('hidden'); }
       try {
-        const data=new FormData(); data.set('file', file);
-        const response=await api('/api/reports/analyze', {method:'POST', body:data});
-        const meta=await response.json();
-        const sections=(meta.editable_sections || []).map(x=>x.name).join(' · ');
+        const body = new FormData(); body.set('file', file);
+        const response = await api('/api/reports/analyze', {method: 'POST', body});
+        const info = await response.json();
+        const sections = (info.editable_sections || []).map(x => x.name).filter((v, i, a) => a.indexOf(v) === i);
         if (summary) summary.innerHTML =
-          '<b>Format recognized · '+Number(meta.page_count)+' pages</b>'
-          + '<p>College: '+escapeHTML(meta.institution || 'Retained from PDF')+'</p>'
-          + '<p>Department: '+escapeHTML(meta.department || 'Retained from PDF')+'</p>'
-          + '<p>Existing title: '+escapeHTML(meta.source_title || 'Not detected')+'</p>'
-          + '<p>Student: '+escapeHTML(meta.source_name || 'Not detected')+' '+escapeHTML(meta.source_usn || '')+'</p>'
-          + '<small>Original headings and design stay unchanged. Editable sections: '+escapeHTML(sections || 'None identified')+'</small>';
-      } catch(error) {
-        if (summary) summary.textContent='Could not inspect this PDF: '+error.message;
+          `<b>Format recognized · ${Number(info.page_count)} of 70 pages</b>` +
+          `<p>College: ${escapeHTML(info.institution || 'Retained from the source')}</p>` +
+          `<p>Department: ${escapeHTML(info.department || 'Retained from the source')}</p>` +
+          `<p>Original title: ${escapeHTML(info.source_title || 'Not identified')}</p>` +
+          `<small>Images: ${Number(info.image_count || 0)}. Editable chapters: ${escapeHTML(sections.join(' · ') || 'No safe body-text sections recognized')}.</small>`;
+      } catch (error) {
+        if (summary) summary.textContent = `PDF inspection: ${error.message}`;
       }
     }
+
     form.addEventListener('submit', async event => {
       event.preventDefault();
-      const file = input.files?.[0]; if (!file) {toast('Upload your reference PDF first.');return;}
-      const formData = new FormData(form); formData.set('file', file);
-      $('#report-error')?.classList.add('hidden'); $('#report-success')?.classList.add('hidden');
-      const button = $('#generate-report'); button.disabled = true;
-      $('#report-progress')?.classList.remove('hidden');
-      const title = $('#progress-title'), detail = $('#progress-detail');
-      const messages = [['Reading the uploaded document…','Keeping the existing chapter headings and college information.'],['Rewriting section by section…','Generating new sentences within the original text-line lengths.'],['Checking and exporting the PDF…','Retaining page dimensions, images, and original layout.']];
-      let stage = 0; const timer = setInterval(()=>{stage=Math.min(stage+1,2);if(title)title.textContent=messages[stage][0];if(detail)detail.textContent=messages[stage][1];},6500);
+      if (active) return;
+      const file = input.files?.[0];
+      if (!file) { showError('Upload your original PDF first.'); return; }
+      errorBox?.classList.add('hidden');
+      const body = new FormData(form);
+      body.set('file', file);
+      setBusy(true);
+      if (progressTitle) progressTitle.textContent = 'Submitting your PDF…';
+      if (progressDetail) progressDetail.textContent = 'Checking the original document, ready for a background job.';
       try {
-        const response = await api('/api/reports/generate', {method:'POST',body:formData});
-        const blob = await response.blob();
-        const disposition = response.headers.get('content-disposition') || '';
-        const match = disposition.match(/filename="?([^";]+)"?/i);
-        const filename = match?.[1] || 'LumiDesk_Report.pdf';
-        const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href=url;a.download=filename;document.body.append(a);a.click();a.remove();
-        const warnings = Number(response.headers.get('x-report-warnings') || 0);
-        let warningDetails = [];
-        try { warningDetails = JSON.parse(decodeURIComponent(response.headers.get('x-report-warning-details') || '%5B%5D')); } catch {}
-        $('#report-success')?.classList.remove('hidden');
-        $('#report-success-copy').textContent = warnings ? `Your PDF downloaded. ${warnings} document review note(s): ${warningDetails.slice(0,3).join(' ')}` : 'Your PDF downloaded. Review every page, confirm all facts and complete any faculty approval pages before printing.';
-        $('#report-form').querySelectorAll('input,textarea,button').forEach(el=>{if(el.type!=='file' && el.id!=='create-another')el.disabled=true;});
-        $('#download-again')?.addEventListener('click',()=>{const b=document.createElement('a');b.href=url;b.download=filename;b.click();});
-        $('#create-another')?.addEventListener('click',()=>{form.reset();input.value='';$('#file-selected')?.classList.add('hidden');$('#report-success')?.classList.add('hidden');form.querySelectorAll('input,textarea,button').forEach(el=>el.disabled=false);URL.revokeObjectURL(url);});
-        await refreshStudentOverview(); toast('Your report draft has been generated. Please review it carefully.');
-      } catch(error) { $('#report-error').textContent=error.message;$('#report-error')?.classList.remove('hidden'); }
-      finally { clearInterval(timer);$('#report-progress')?.classList.add('hidden');button.disabled=false; }
+        const response = await api('/api/reports/start', {method: 'POST', body});
+        const job = await response.json();
+        await waitForJob(job.job_id);
+      } catch (error) {
+        showError(error.message);
+      } finally {
+        setBusy(false);
+      }
     });
+
+    regenerateButton?.addEventListener('click', async () => {
+      if (active || !latestJobId) return;
+      const name = $('#regen-name')?.value.trim();
+      const usn = $('#regen-usn')?.value.trim();
+      if (!name || !usn) { showError('Enter the new student name and USN.'); return; }
+      errorBox?.classList.add('hidden');
+      setBusy(true);
+      if (progressTitle) progressTitle.textContent = 'Creating a different writing variant…';
+      try {
+        const body = new FormData();
+        body.set('student_name', name); body.set('usn', usn);
+        const response = await api(`/api/reports/jobs/${encodeURIComponent(latestJobId)}/regenerate`, {
+          method: 'POST', body,
+        });
+        const job = await response.json();
+        await waitForJob(job.job_id);
+      } catch (error) { showError(error.message); }
+      finally { setBusy(false); }
+    });
+
+    $('#download-again')?.addEventListener('click', () => {
+      if (!lastDownloadUrl) return;
+      const link = document.createElement('a');
+      link.href = lastDownloadUrl; link.download = 'LumiDesk_Report.pdf'; link.click();
+    });
+    $('#create-another')?.addEventListener('click', () => {
+      if (active) return;
+      form.reset(); input.value = '';
+      $('#file-selected')?.classList.add('hidden');
+      $('#template-analysis')?.classList.add('hidden');
+      successBox?.classList.add('hidden');
+      errorBox?.classList.add('hidden');
+      regenPanel?.classList.add('hidden');
+      latestJobId = '';
+      sessionStorage.removeItem('lumidesk_report_job');
+      if (lastDownloadUrl) { URL.revokeObjectURL(lastDownloadUrl); lastDownloadUrl = ''; }
+    });
+
+    // Refresh/reopen resumes polling for jobs still running in this Render process.
+    const pending = sessionStorage.getItem('lumidesk_report_job');
+    if (pending) waitForJob(pending);
   }
 
   // Admin console is server-gated; the browser never grants a role.
