@@ -23,3 +23,12 @@ for filename, url in FONTS.items():
         print(f"Installed {filename} ({len(data)} bytes)")
     except Exception as exc:
         print(f"Optional font {filename} could not be downloaded: {exc}")
+
+license_path = FONT_DIR / "OFL-LICENSE.txt"
+if not license_path.exists():
+    try:
+        request = Request("https://raw.githubusercontent.com/notofonts/noto-fonts/main/LICENSE", headers={"User-Agent": "LumiDesk-AI-font-installer/1.0"})
+        with urlopen(request, timeout=25) as response:
+            license_path.write_bytes(response.read())
+    except Exception as exc:
+        print(f"Optional Noto font license could not be downloaded: {exc}")
