@@ -126,8 +126,8 @@
   function setUsage(prefix, used, limit) {
     const value = $(`#${prefix}-usage`), total = $(`#${prefix}-limit`), bar = $(`#${prefix}-usage-bar`);
     if (value) value.textContent = used;
-    if (total) total.textContent = limit;
-    if (bar) bar.style.width = `${Math.min(100, limit ? used / limit * 100 : 0)}%`;
+    if (total) total.textContent = Number(limit) === 0 ? '∞' : limit;
+    if (bar) bar.style.width = `${Math.min(100, limit > 0 ? used / limit * 100 : 0)}%`;
   }
   function initTutor() {
     const form = $('#tutor-form'), input = $('#tutor-message'), chat = $('#chat-area');
