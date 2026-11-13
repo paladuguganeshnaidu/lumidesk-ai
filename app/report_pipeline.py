@@ -201,7 +201,9 @@ def static_replacements(template: dict, old: dict, title: str, name: str, usn: s
                 if match and block["rect"][1] > 90:
                     substitutions[(idx, block["block_id"])] = f"{match.group(1)}. [Add a verified reference for the new project]"
                 elif 90 < block["rect"][1] < page["height"] - 65 and len(block["text"]) > 18:
-                    substitutions[(idx, block["block_id"])] = ""
+                    # Preserve visible reference placeholders instead of wiping the page.
+                    # Source citations must be verified by the student; never invent them.
+                    substitutions[(idx, block["block_id"])] = "[Source details to verify before submission]"
         if section_of(page) == "photographs":
             for block in page["blocks"]:
                 if block["text"].lower().startswith(("fig :", "fig:", "fig2:")):
