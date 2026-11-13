@@ -126,7 +126,7 @@
   function setUsage(prefix, used, limit) {
     const value = $(`#${prefix}-usage`), total = $(`#${prefix}-limit`), bar = $(`#${prefix}-usage-bar`);
     if (value) value.textContent = used;
-    if (total) total.textContent = limit;
+    if (total) total.textContent = Number(limit) === 0 ? '∞' : limit;
     if (bar) bar.style.width = `${Math.min(100, limit ? used / limit * 100 : 0)}%`;
   }
   function initTutor() {
@@ -353,6 +353,8 @@
           method: 'POST', body,
         });
         const job = await response.json();
+        form.querySelector('[name="student_name"]').value = name;
+        form.querySelector('[name="usn"]').value = usn;
         await waitForJob(job.job_id);
       } catch (error) { showError(error.message); }
       finally { setBusy(false); }
