@@ -45,3 +45,21 @@
 .workspace-page :focus-visible{outline:2px solid var(--lumiamber);outline-offset:3px}
 @media(max-width:760px){.workspace-page .app-sidebar{background:var(--lumipanel)!important}.workspace-page .workspace-content{width:calc(100% - 34px)}.workspace-page .heading-orb{display:none}}
 .editorial-aux{background:#0A0C0E!important;color:#EDE7DC!important;min-height:100vh}.editorial-aux .legal-page,.editorial-aux .setup-screen{background:#0A0C0E!important;color:#EDE7DC!important}.editorial-aux .setup-card{background:#101317!important;border:1px solid rgba(237,231,220,.13)!important;box-shadow:none!important}.editorial-aux h1,.editorial-aux h2,.editorial-aux .brand{font-family:'Syne',sans-serif!important;color:#EDE7DC!important}.editorial-aux p,.editorial-aux li,.editorial-aux .legal-updated{color:#9EA5A8!important}.editorial-aux .brand-ai,.editorial-aux .gradient-words{color:#E8913C!important;-webkit-text-fill-color:#E8913C!important;background:none!important}.editorial-aux .button-primary{border:1px solid #E8913C!important;color:#EDE7DC!important;background:transparent!important;box-shadow:none!important}
+
+
+/* Dark interactive learning results and export details. */
+.workspace-page .answer-user{background:#172226!important;border:1px solid var(--lumiline)!important;color:#EDE7DC!important;border-radius:12px!important}
+.workspace-page .answer-card,.workspace-page .diagram-wrap,.workspace-page .quiz-card{background:#101317!important;border:1px solid var(--lumiline)!important;color:#EDE7DC!important;border-radius:4px!important}
+.workspace-page .answer-card h3,.workspace-page .answer-card h4{color:#EDE7DC!important;font-family:'Syne',sans-serif!important}
+.workspace-page .answer-card p,.workspace-page .answer-card li,.workspace-page .answer-card ul,.workspace-page .answer-card ol{color:#9EA5A8!important}
+.workspace-page .answer-callout{background:#161B1D!important;border-left:2px solid #E8913C!important;color:#EDE7DC!important;border-radius:0!important}
+.workspace-page .quiz-card button{background:#161B1D!important;border:1px solid var(--lumiline)!important;color:#EDE7DC!important;border-radius:4px!important}
+.workspace-page .quiz-card button:hover,.workspace-page .quiz-card button.correct{border-color:#2E6B72!important;background:#152326!important}
+.workspace-page .quiz-card button.incorrect{border-color:#E8913C!important;background:#241C17!important}
+.workspace-page .file-selected{background:#152326!important;border:1px solid var(--lumiline)!important;color:#EDE7DC!important;border-radius:4px!important}
+.workspace-page .file-selected button{color:#E8913C!important}
+.workspace-page .template-analysis b,.workspace-page .template-analysis p,.workspace-page .template-analysis small,.workspace-page .format-inspector small,.workspace-page .format-inspector p,.workspace-page .regenerate-panel h4,.workspace-page .regenerate-panel p,.workspace-page .report-success p{color:#9EA5A8!important}
+.workspace-page .format-inspector b,.workspace-page .regenerate-panel h4,.workspace-page .template-analysis b{color:#EDE7DC!important}
+.workspace-page .admin-view,.workspace-page .admin-view *{text-shadow:none!important}
+.workspace-page .help-card,.workspace-page .assistant-welcome,.workspace-page .learning-tip{background-image:none!important}
+.workspace-page .report-success .report-download-grid .button small{color:#9EA5A8!important}

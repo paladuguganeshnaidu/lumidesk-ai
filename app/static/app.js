@@ -158,7 +158,7 @@
     chat.append(article);
     if (data.mermaid && window.mermaid && !/[<>]|script/i.test(data.mermaid)) {
       const target = $('.mermaid', article); target.textContent = data.mermaid;
-      window.mermaid.initialize({startOnLoad:false,theme:'base',securityLevel:'strict',themeVariables:{primaryColor:'#eee9ff',primaryTextColor:'#4b4660',lineColor:'#9a8bd0',secondaryColor:'#e7f6ef',tertiaryColor:'#fff1e9',fontFamily:'DM Sans'}});
+      window.mermaid.initialize({startOnLoad:false,theme:'dark',securityLevel:'strict',themeVariables:{background:'#101317',primaryColor:'#101317',primaryTextColor:'#EDE7DC',primaryBorderColor:'#E8913C',lineColor:'#2E6B72',secondaryColor:'#161B1D',tertiaryColor:'#101317',fontFamily:'Sora'}});
       window.mermaid.run({nodes:[target]}).catch(()=>{target.textContent='Diagram preview unavailable for this response.';});
     } else $('.diagram-wrap', article)?.classList.add('hidden');
     $$('.quiz-question', article).forEach((question, index) => {
