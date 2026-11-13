@@ -176,15 +176,34 @@
     const input = $('#reference-pdf'), zone = $('#upload-zone'), form = $('#report-form'); if (!input || !zone || !form) return;
     $('#browse-pdf')?.addEventListener('click', () => input.click());
     input.addEventListener('change', () => showSelectedFile(input.files?.[0]));
-    $('#remove-file')?.addEventListener('click', () => { input.value=''; $('#file-selected')?.classList.add('hidden'); });
+    $('#remove-file')?.addEventListener('click', () => { input.value=''; $('#file-selected')?.classList.add('hidden'); $('#template-analysis')?.classList.add('hidden'); });
     ['dragenter','dragover'].forEach(type => zone.addEventListener(type, e => {e.preventDefault();zone.classList.add('dragover');}));
     ['dragleave','drop'].forEach(type => zone.addEventListener(type, e => {e.preventDefault();zone.classList.remove('dragover');}));
     zone.addEventListener('drop', e => {const f=e.dataTransfer.files?.[0];if(f){input.files=e.dataTransfer.files;showSelectedFile(f);}});
-    function showSelectedFile(file) {
+    async function showSelectedFile(file) {
       if (!file) return;
-      if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) { toast('Please select a PDF file.'); input.value=''; return; }
-      $('#file-name').textContent = `${file.name} · ${(file.size/1024/1024).toFixed(1)} MB`;
+      if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
+        toast('Please select a PDF file.'); input.value=''; return;
+      }
+      $('#file-name').textContent = file.name + ' · ' + (file.size/1024/1024).toFixed(1) + ' MB';
       $('#file-selected')?.classList.remove('hidden');
+      const summary = $('#template-analysis');
+      if (summary) { summary.textContent='Reading the report format…'; summary.classList.remove('hidden'); }
+      try {
+        const data=new FormData(); data.set('file', file);
+        const response=await api('/api/reports/analyze', {method:'POST', body:data});
+        const meta=await response.json();
+        const sections=(meta.editable_sections || []).map(x=>x.name).join(' · ');
+        if (summary) summary.innerHTML =
+          '<b>Format recognized · '+Number(meta.page_count)+' pages</b>'
+          + '<p>College: '+escapeHTML(meta.institution || 'Retained from PDF')+'</p>'
+          + '<p>Department: '+escapeHTML(meta.department || 'Retained from PDF')+'</p>'
+          + '<p>Existing title: '+escapeHTML(meta.source_title || 'Not detected')+'</p>'
+          + '<p>Student: '+escapeHTML(meta.source_name || 'Not detected')+' '+escapeHTML(meta.source_usn || '')+'</p>'
+          + '<small>Original headings and design stay unchanged. Editable sections: '+escapeHTML(sections || 'None identified')+'</small>';
+      } catch(error) {
+        if (summary) summary.textContent='Could not inspect this PDF: '+error.message;
+      }
     }
     form.addEventListener('submit', async event => {
       event.preventDefault();
@@ -194,7 +213,7 @@
       const button = $('#generate-report'); button.disabled = true;
       $('#report-progress')?.classList.remove('hidden');
       const title = $('#progress-title'), detail = $('#progress-detail');
-      const messages = [['Reading your template…','Mapping page structure and design elements.'],['Writing original content…','Adapting the report to your project concept.'],['Rebuilding the PDF…','Preserving images and checking text fit.']];
+      const messages = [['Reading the uploaded document…','Keeping the existing chapter headings and college information.'],['Rewriting section by section…','Generating new sentences within the original text-line lengths.'],['Checking and exporting the PDF…','Retaining page dimensions, images, and original layout.']];
       let stage = 0; const timer = setInterval(()=>{stage=Math.min(stage+1,2);if(title)title.textContent=messages[stage][0];if(detail)detail.textContent=messages[stage][1];},6500);
       try {
         const response = await api('/api/reports/generate', {method:'POST',body:formData});
@@ -207,7 +226,7 @@
         let warningDetails = [];
         try { warningDetails = JSON.parse(decodeURIComponent(response.headers.get('x-report-warning-details') || '%5B%5D')); } catch {}
         $('#report-success')?.classList.remove('hidden');
-        $('#report-success-copy').textContent = warnings ? `Your PDF downloaded. ${warnings} text area(s) may need manual review: ${warningDetails.slice(0,3).join(' ')}` : 'Your PDF downloaded. Review every page, confirm all facts and complete any faculty approval pages before printing.';
+        $('#report-success-copy').textContent = warnings ? `Your PDF downloaded. ${warnings} document review note(s): ${warningDetails.slice(0,3).join(' ')}` : 'Your PDF downloaded. Review every page, confirm all facts and complete any faculty approval pages before printing.';
         $('#report-form').querySelectorAll('input,textarea,button').forEach(el=>{if(el.type!=='file' && el.id!=='create-another')el.disabled=true;});
         $('#download-again')?.addEventListener('click',()=>{const b=document.createElement('a');b.href=url;b.download=filename;b.click();});
         $('#create-another')?.addEventListener('click',()=>{form.reset();input.value='';$('#file-selected')?.classList.add('hidden');$('#report-success')?.classList.add('hidden');form.querySelectorAll('input,textarea,button').forEach(el=>el.disabled=false);URL.revokeObjectURL(url);});
