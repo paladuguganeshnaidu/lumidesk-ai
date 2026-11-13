@@ -75,3 +75,80 @@ async def report_plan(*, topic: str, title: str, student: str, institution: str,
     if not isinstance(data.get("pages"), list):
         raise ValueError("The AI response did not contain a valid page plan.")
     return data
+
+
+async def rewrite_report_pages(*, title: str, topic: str, sections: list[dict]) -> list[dict]:
+    """Rewrite a long PDF in page-sized batches with bounded repair attempts."""
+    import asyncio
+    import re
+    client = _client()
+    model = os.getenv("NVIDIA_MODEL", "nvidia/nemotron-3.5-lightning-30b-a3b")
+    gate = asyncio.Semaphore(2)
+    rules = (
+        "You are a format-preserving academic report editor. Rewrite ONLY the "
+        "selected content lines for the NEW project, not the source project. "
+        "Keep the same line count, block_id values and order. Each new line must "
+        "be near the original length (ideally 75%-110%, maximum 125%). "
+        "Keep numbered points numbered and make consecutive lines read coherently. "
+        "Never invent completed experiments, surveys, fieldwork, approvals, "
+        "statistics or citations. Do not edit college names, departments, "
+        "headings, photos, signatures or page numbering. If project evidence "
+        "is missing, describe a proposed goal, not a completed result. "
+        'Return only JSON of the form {"blocks":[{"block_id":1,"text":"example"}]}.'
+    )
+    async def one_page(page):
+        allowed = {int(x["block_id"]): x for x in page["slots"]}
+        payload = {
+            "new_title": title, "new_project_details": topic,
+            "section_heading_to_keep": page["section"],
+            "source_body_lines_for_structure_only": [
+                {"block_id": int(x["block_id"]), "target_length": x["length"],
+                 "source_line": x["sample"]} for x in page["slots"]
+            ],
+        }
+        error = "The AI did not complete this section."
+        async with gate:
+            for attempt in range(3):
+                try:
+                    response = await client.chat.completions.create(
+                        model=model,
+                        messages=[{"role": "system", "content": rules},
+                                  {"role": "user", "content": json.dumps(payload, ensure_ascii=False)}],
+                        temperature=0.25 if not attempt else 0.1,
+                        max_tokens=min(4200, max(1700, len(allowed) * 140)),
+                        response_format={"type": "json_object"},
+                    )
+                    raw = (response.choices[0].message.content or "").strip()
+                    if not raw.startswith("{"):
+                        raw = raw[raw.index("{"):raw.rindex("}")+1]
+                    decoded = json.loads(raw)
+                    if not isinstance(decoded.get("blocks"), list):
+                        raise ValueError("Expected a blocks array.")
+                    matched = {}
+                    for entry in decoded["blocks"]:
+                        key = int(entry["block_id"])
+                        if key not in allowed:
+                            continue
+                        original = allowed[key]
+                        content = " ".join(str(entry.get("text", "")).split())
+                        if (len(content) < max(5, original["length"] * .35)
+                                or len(content) > original["length"] * 1.35 + 9):
+                            continue
+                        numbered = re.match(r"^(\d+[.)])\s*", original["sample"])
+                        if numbered and not content.startswith(numbered.group(1)):
+                            content = numbered.group(1) + " " + content
+                        matched[key] = content
+                    if len(matched) != len(allowed):
+                        raise ValueError(f"Only {len(matched)} of {len(allowed)} lines fit.")
+                    return {"page_index": page["page_index"],
+                            "blocks": [{"block_id": key, "text": matched[key]}
+                                       for key in allowed]}
+                except Exception as exc:
+                    error = str(exc)[:200]
+                    if attempt < 2:
+                        await asyncio.sleep(1.5 * (attempt + 1))
+        raise AIUnavailable(
+            f"Couldn't finish the {page['section']} section within the original "
+            f"layout after three attempts. {error}"
+        )
+    return await asyncio.gather(*(one_page(page) for page in sections))
