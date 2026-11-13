@@ -201,17 +201,31 @@ async def api_generate_report(
         structural_blocks = []
         for block in page["blocks"]:
             source_label = block["text"].strip()
-            is_heading = (len(source_label) <= 90 and (source_label.isupper() or float(block["font_size"]) >= 12.5))
             lowered = source_label.lower()
+            normalized_heading = re.sub(r"[^a-z0-9 ]", "", lowered).strip()
+            generic_headings = {
+                "abstract", "acknowledgement", "acknowledgment", "declaration", "certificate",
+                "introduction", "problem statement", "objectives", "scope", "literature review",
+                "related work", "methodology", "system design", "architecture", "implementation",
+                "results", "discussion", "conclusion", "future work", "references", "bibliography",
+                "appendix", "annexure", "contents", "table of contents",
+            }
+            is_heading = len(source_label) <= 90 and (source_label.isupper() or float(block["font_size"]) >= 12.5)
             if any(word in lowered for word in ("signature", "approved", "certified", "certificate", "principal", "examiner")):
                 role = "approval_or_signature_placeholder"
                 label = "Authorized approval/signature area"
-            elif is_heading:
+            elif is_heading and normalized_heading in generic_headings:
                 role = "heading"
-                label = source_label[:90]
+                label = normalized_heading.title()
+            elif is_heading and page["page_index"] == 0:
+                role = "cover_title"
+                label = "New project title field"
+            elif is_heading:
+                role = "section_heading"
+                label = "Section heading"
             elif len(source_label) <= 55 and page["page_index"] == 0:
                 role = "cover_metadata"
-                label = source_label[:55]
+                label = "Student/institution metadata field"
             else:
                 role = "body_text"
                 label = "Original body text omitted; write new content for the requested project."
