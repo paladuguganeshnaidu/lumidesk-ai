@@ -7,7 +7,7 @@ import pymupdf as fitz
 FONT_DIR = Path(__file__).resolve().parent / "fonts"
 
 MAX_PAGES = 35
-MAX_BLOCKS = 500
+MAX_BLOCKS = 700
 
 
 def _clean_text(text: str) -> str:
@@ -25,30 +25,32 @@ def inspect_pdf(data: bytes) -> tuple[fitz.Document, dict]:
     for page_index, page in enumerate(doc):
         blocks = []
         raw = page.get_text("dict")
+        # The PDF may mix a heading and the first body paragraph in one
+        # text block. Treat each actual visible line as its own editable slot.
         for block in raw.get("blocks", []):
             if block.get("type") != 0:
                 continue
-            lines = block.get("lines", [])
-            spans = [s for line in lines for s in line.get("spans", []) if _clean_text(s.get("text", ""))]
-            if not spans:
-                continue
-            text = _clean_text(" ".join(s.get("text", "") for s in spans))
-            rect = fitz.Rect(block.get("bbox", (0, 0, 0, 0)))
-            if not text or rect.is_empty or rect.width < 4 or rect.height < 3:
-                continue
-            # Skip text that is likely a page number; it is preserved as a structural marker.
-            if len(text) <= 3 and text.isdigit():
-                continue
-            first = spans[0]
-            blocks.append({
-                "block_id": len(blocks),
-                "text": text[:190],
-                "rect": [round(v, 2) for v in rect],
-                "font_size": round(float(first.get("size", 10)), 1),
-                "font": str(first.get("font", "Helvetica"))[:60],
-                "color": int(first.get("color", 0)),
-                "flags": int(first.get("flags", 0)),
-            })
+            for line in block.get("lines", []):
+                spans = [part for part in line.get("spans", []) if _clean_text(part.get("text", ""))]
+                if not spans:
+                    continue
+                raw_text = "".join(part.get("text", "") for part in spans)
+                text = _clean_text(raw_text)
+                rect = fitz.Rect(line.get("bbox", block.get("bbox", (0, 0, 0, 0))))
+                if not text or rect.is_empty or rect.width < 4 or rect.height < 3:
+                    continue
+                if len(text) <= 3 and text.isdigit():
+                    continue
+                primary = max(spans, key=lambda part: len(part.get("text", "").strip()))
+                blocks.append({
+                    "block_id": len(blocks), "text": text[:300],
+                    "rect": [round(v, 2) for v in rect],
+                    "font_size": round(float(primary.get("size", 10)), 2),
+                    "font": str(primary.get("font", "Helvetica"))[:60],
+                    "color": int(primary.get("color", 0)),
+                    "flags": int(primary.get("flags", 0)),
+                    "leading_spaces": len(raw_text) - len(raw_text.lstrip()),
+                })
         total_blocks += len(blocks)
         if total_blocks > MAX_BLOCKS:
             doc.close()
@@ -96,52 +98,63 @@ def render_replacement_pdf(source: bytes, template: dict, plan: dict) -> tuple[b
     for page_info in template["pages"]:
         pidx = page_info["page_index"]
         page = doc[pidx]
-        original_blocks = page_info["blocks"]
-        # Remove only text; preserve raster images and vector artwork, including logos.
-        for block in original_blocks:
+        changed = [b for b in page_info["blocks"] if (pidx, b["block_id"]) in replacements]
+        if not changed:
+            continue  # Untouched text, artwork, logos, tables and images are preserved.
+        for block in changed:
             rect = fitz.Rect(block["rect"])
+            rect.x0 = max(0, rect.x0 - .4)
+            rect.x1 = min(page.rect.width, rect.x1 + .4)
             page.add_redact_annot(rect, fill=None, cross_out=False)
         page.apply_redactions(images=0, graphics=0, text=0)
-        for block in original_blocks:
-            text = replacements.get((pidx, block["block_id"]), "")
+        for block in changed:
+            text = replacements[(pidx, block["block_id"])].strip()
             if not text:
-                text = "[STUDENT TO COMPLETE]"
-                warnings.append(f"Page {pidx + 1}, text area {block['block_id'] + 1}: the AI did not return content for this area.")
+                continue
             rect = fitz.Rect(block["rect"])
-            # Slight inset prevents descenders from touching neighboring artwork.
-            rect.x0 += 0.6; rect.y0 += 0.4; rect.x1 -= 0.6; rect.y1 -= 0.4
-            fontsize = max(5.2, min(float(block["font_size"]), 24.0))
-            color_int = int(block["color"])
-            color = (((color_int >> 16) & 255) / 255, ((color_int >> 8) & 255) / 255, (color_int & 255) / 255)
-            font = _font_name(block["font"], block["flags"])
-            codepoints = [ord(ch) for ch in text]
-            if any(0x0C00 <= cp <= 0x0C7F for cp in codepoints):
-                fontfile = FONT_DIR / "NotoSansTelugu-Regular.ttf"
-                custom_font = "LumiTelugu"
-            elif any(0x0900 <= cp <= 0x097F for cp in codepoints):
-                fontfile = FONT_DIR / "NotoSansDevanagari-Regular.ttf"
-                custom_font = "LumiDevanagari"
+            original_size = min(24, max(7, float(block["font_size"])))
+            tint = int(block["color"])
+            color = (((tint >> 16) & 255) / 255,
+                     ((tint >> 8) & 255) / 255, (tint & 255) / 255)
+            oldfont = _font_name(block["font"], block["flags"])
+            if any(0x0C00 <= ord(ch) <= 0x0C7F for ch in text):
+                fontfile, custom = FONT_DIR / "NotoSansTelugu-Regular.ttf", "LumiTelugu"
+            elif any(0x0900 <= ord(ch) <= 0x097F for ch in text):
+                fontfile, custom = FONT_DIR / "NotoSansDevanagari-Regular.ttf", "LumiDevanagari"
             else:
-                fontfile = FONT_DIR / ("NotoSans-Bold.ttf" if (block["flags"] & 16 or "bold" in block["font"].lower()) else "NotoSans-Regular.ttf")
-                custom_font = "LumiSans"
-            result = -1
-            use_embedded_font = fontfile.exists()
-            if not use_embedded_font and any(ord(ch) > 255 for ch in text):
-                warnings.append(f"Page {pidx + 1}, text area {block['block_id'] + 1}: this deployment does not include the required Indic font; use Latin text or bundle the Noto font files.")
-                text = ''.join(ch if ord(ch) <= 255 else ' ' for ch in text)
-            for _ in range(9):
-                if use_embedded_font:
-                    result = page.insert_textbox(rect, text, fontname=custom_font, fontfile=str(fontfile), fontsize=fontsize, color=color, align=fitz.TEXT_ALIGN_LEFT, lineheight=1.08, overlay=True)
-                else:
-                    result = page.insert_textbox(rect, text, fontname=font, fontsize=fontsize, color=color, align=fitz.TEXT_ALIGN_LEFT, lineheight=1.08, overlay=True)
-                if result >= 0:
+                bold = bool(block["flags"] & 16 or "bold" in block["font"].lower())
+                fontfile = FONT_DIR / ("NotoSans-Bold.ttf" if bold else "NotoSans-Regular.ttf")
+                custom = "LumiSans"
+            if fontfile.exists():
+                font = fitz.Font(fontfile=str(fontfile))
+                page.insert_font(fontname=custom, fontfile=str(fontfile))
+                fontname = custom
+            else:
+                font = fitz.Font(oldfont)
+                fontname = oldfont
+                if any(ord(ch) > 255 for ch in text):
+                    warnings.append(f"Page {pidx+1}: non-Latin font unavailable. Review the text.")
+            # Keep replacements in the original one-line box and font size when possible.
+            width_available = min(page.rect.width - rect.x0 - 30, rect.width + 3)
+            target_size = original_size
+            for _ in range(15):
+                if font.text_length(text, fontsize=target_size) <= width_available:
                     break
-                # Remove a failed insertion before retrying: insert_textbox returns negative without drawing.
-                fontsize *= 0.88
-            if result < 0:
-                warnings.append(f"Page {pidx + 1}, text area {block['block_id'] + 1}: content may not fit the original space.")
-                short = text[:max(25, int(len(text) * 0.65))].rstrip()
-                page.insert_textbox(rect, short + "…", fontname=custom_font, fontfile=str(fontfile), fontsize=max(5, fontsize), color=color, overlay=True) if use_embedded_font else page.insert_textbox(rect, short + "…", fontname=font, fontsize=max(5, fontsize), color=color, overlay=True)
+                target_size *= .97
+            if font.text_length(text, fontsize=target_size) > width_available:
+                warnings.append(f"Page {pidx+1}, line {block['block_id']+1}: text was too long.")
+                while font.text_length(text, fontsize=target_size) > width_available and len(text) > 12:
+                    text = text.rsplit(" ", 1)[0] if " " in text else text[:-1]
+            start_x = rect.x0
+            if block.get("leading_spaces", 0) >= 8:
+                # Centered Word/PDF lines may contain 50 literal leading spaces.
+                original_font = fitz.Font(oldfont)
+                original_width = original_font.text_length(block["text"], fontsize=float(block["font_size"]))
+                visual_center = rect.x1 - original_width / 2
+                start_x = max(10, visual_center - font.text_length(text, fontsize=target_size) / 2)
+            point = fitz.Point(start_x, rect.y1 - max(.7, (rect.height - target_size) * .11))
+            page.insert_text(point, text, fontname=fontname, fontsize=target_size,
+                             color=color, overlay=True)
     doc.set_metadata({"title": "LumiDesk AI — Student Project Report", "author": "Student-authored report", "subject": "Original project report generated from an authorized design template"})
     out = doc.tobytes(garbage=4, deflate=True, clean=True)
     doc.close()
