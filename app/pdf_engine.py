@@ -3,6 +3,7 @@ import io
 import re
 from pathlib import Path
 import pymupdf as fitz
+from .typography import annotate_typography
 
 FONT_DIR = Path(__file__).resolve().parent / "fonts"
 
@@ -47,6 +48,13 @@ def inspect_pdf(data: bytes) -> tuple[fitz.Document, dict]:
                     "block_id": len(blocks), "text": text[:300],
                     "rect": [round(v, 2) for v in rect],
                     "font_size": round(float(primary.get("size", 10)), 2),
+                    "origin": [round(float(v), 2) for v in primary.get("origin", (rect.x0, rect.y1))],
+                    "spans": [{"text": part.get("text", ""), "font": str(part.get("font", ""))[:85],
+                               "size_pt": round(float(part.get("size", 10)), 2),
+                               "color": int(part.get("color", 0)), "flags": int(part.get("flags", 0)),
+                               "origin": [round(float(v), 2) for v in part.get("origin", (rect.x0, rect.y1))],
+                               "bbox": [round(float(v), 2) for v in part.get("bbox", rect)]}
+                              for part in spans[:12]],
                     "font": str(primary.get("font", "Helvetica"))[:60],
                     "color": int(primary.get("color", 0)), "flags": int(primary.get("flags", 0)),
                     "leading_spaces": len(raw_text) - len(raw_text.lstrip()),
@@ -55,13 +63,16 @@ def inspect_pdf(data: bytes) -> tuple[fitz.Document, dict]:
         if total_blocks > MAX_BLOCKS:
             doc.close()
             raise ValueError(f"This PDF has more than {MAX_BLOCKS} text lines; simplify dense pages or split the document.")
-        pages.append({
+        page_data = {
             "page_index": page_index,
             "width": round(page.rect.width, 2),
             "height": round(page.rect.height, 2),
             "image_count": len(page.get_images(full=True)),
             "blocks": blocks,
-        })
+            "rotation": int(page.rotation),
+        }
+        annotate_typography(page_data)
+        pages.append(page_data)
     if total_blocks == 0:
         doc.close()
         raise ValueError("No selectable text was found. This looks like a scanned PDF; OCR support is not enabled in this free build.")
@@ -95,6 +106,22 @@ def render_replacement_pdf(source: bytes, template: dict, plan: dict) -> tuple[b
             except (KeyError, TypeError, ValueError):
                 continue
     warnings = []
+    # Reuse the actual embedded TrueType face from the input when it can render
+    # the new glyphs. This preserves exact family/weight/character metrics far
+    # better than forcing a generic fallback font in every replacement line.
+    embedded_fonts = {}
+    for idx in range(len(doc)):
+        for entry in doc[idx].get_fonts(full=True):
+            xref, ext, family, pdf_name = entry[:4]
+            face = str(pdf_name).split('+')[-1].lower().replace('-', '')
+            if ext not in ('ttf', 'otf') or face in embedded_fonts:
+                continue
+            try:
+                data = doc.extract_font(xref)[3]
+                if data:
+                    embedded_fonts[face] = (fitz.Font(fontbuffer=data), data)
+            except Exception:
+                pass
     for page_info in template["pages"]:
         pidx = page_info["page_index"]
         page = doc[pidx]
@@ -118,25 +145,34 @@ def render_replacement_pdf(source: bytes, template: dict, plan: dict) -> tuple[b
             tint = int(block["color"])
             color = (((tint >> 16) & 255) / 255, ((tint >> 8) & 255) / 255, (tint & 255) / 255)
             oldfont = _font_name(block["font"], block["flags"])
-            if any(0x0C00 <= ord(c) <= 0x0C7F for c in text):
-                fontfile = FONT_DIR / "NotoSansTelugu-Regular.ttf"
-                custom = "LumiTelugu"
-            elif any(0x0900 <= ord(c) <= 0x097F for c in text):
-                fontfile = FONT_DIR / "NotoSansDevanagari-Regular.ttf"
-                custom = "LumiDevanagari"
+            original_name = str(block.get('font', '')).lower().replace('-', '')
+            original = embedded_fonts.get(original_name)
+            # Always prefer an exact embedded source font when its glyph set
+            # includes the generated text. Some PDFs embed only partial subsets.
+            if original and all((c in '\n\r\t' or original[0].has_glyph(ord(c))) for c in text):
+                font, binary = original
+                fontname = f"LumiOrig{pidx}{block['block_id']}"
+                page.insert_font(fontname=fontname, fontbuffer=binary)
             else:
-                fontfile = FONT_DIR / ("NotoSans-Bold.ttf" if (block["flags"] & 16 or "bold" in block["font"].lower()) else "NotoSans-Regular.ttf")
-                custom = "LumiSans"
-            embedded = fontfile.exists()
-            if embedded:
-                font = fitz.Font(fontfile=str(fontfile))
-                page.insert_font(fontname=custom, fontfile=str(fontfile))
-                fontname = custom
-            else:
-                font = fitz.Font(oldfont)
-                fontname = oldfont
-                if any(ord(c) > 255 for c in text):
-                    warnings.append(f"Page {pidx+1}: non-Latin font unavailable. Check text rendering.")
+                if any(0x0C00 <= ord(c) <= 0x0C7F for c in text):
+                    fontfile = FONT_DIR / "NotoSansTelugu-Regular.ttf"
+                    custom = "LumiTelugu"
+                elif any(0x0900 <= ord(c) <= 0x097F for c in text):
+                    fontfile = FONT_DIR / "NotoSansDevanagari-Regular.ttf"
+                    custom = "LumiDevanagari"
+                else:
+                    fontfile = FONT_DIR / ("NotoSans-Bold.ttf" if (block["flags"] & 16 or "bold" in block["font"].lower()) else "NotoSans-Regular.ttf")
+                    custom = "LumiSans"
+                embedded = fontfile.exists()
+                if embedded:
+                    font = fitz.Font(fontfile=str(fontfile))
+                    page.insert_font(fontname=custom, fontfile=str(fontfile))
+                    fontname = custom
+                else:
+                    font = fitz.Font(oldfont)
+                    fontname = oldfont
+                    if any(ord(c) > 255 for c in text):
+                        warnings.append(f"Page {pidx+1}: non-Latin font unavailable. Check text rendering.")
             # Match the original line's occupied area rather than reflowing the whole page.
             width_available = min(page.rect.width - rect.x0 - 30, rect.width + 3)
             target_size = font_size
@@ -159,7 +195,11 @@ def render_replacement_pdf(source: bytes, template: dict, plan: dict) -> tuple[b
                 original_width = original_font.text_length(block["text"], fontsize=float(block["font_size"]))
                 visual_center = rect.x1 - original_width / 2
                 start_x = max(10, visual_center - font.text_length(text, fontsize=target_size) / 2)
-            point = fitz.Point(start_x, rect.y1 - max(0.7, (rect.height - target_size) * 0.11))
+            original_baseline = block.get('origin', [start_x, rect.y1])
+            baseline = float(original_baseline[1])
+            # Directly retain the PDF baseline. If shrinking text is necessary,
+            # keep the baseline fixed rather than shifting the whole line.
+            point = fitz.Point(start_x, max(1.0, min(page.rect.height-1, baseline)))
             page.insert_text(point, text, fontname=fontname, fontsize=target_size, color=color, overlay=True)
     doc.set_metadata({"title": "LumiDesk AI — Student Project Report", "author": "Student-authored report", "subject": "Original project report generated from an authorized design template"})
     out = doc.tobytes(garbage=4, deflate=True, clean=True)
