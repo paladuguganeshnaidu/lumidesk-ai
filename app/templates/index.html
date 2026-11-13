@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#f7f7ff"><meta name="description" content="LumiDesk AI — a visual learning companion and academic report studio for students.">
+  <title>LumiDesk AI — Learn clearly. Create confidently.</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/styles.css">
+  <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body class="marketing-page" data-csrf="{{ csrf }}">
+  <div class="ambient ambient-one"></div><div class="ambient ambient-two"></div>
+  <header class="site-header wrap">
+    <a class="brand" href="/"><span class="brand-mark"><i data-lucide="sparkles"></i></span><span>LumiDesk<span class="brand-ai">AI</span></span></a>
+    <nav class="desktop-nav"><a href="#platform">Platform</a><a href="#how">How it works</a><a href="#trust">Built responsibly</a></nav>
+    <div class="header-actions">
+      {% if user %}<a class="button button-soft button-small" href="/app">Open workspace <i data-lucide="arrow-up-right"></i></a>{% else %}<a class="button button-soft button-small" href="/auth/google">Sign in</a>{% endif %}
+      <button class="mobile-menu-button" aria-label="Open menu"><i data-lucide="menu"></i></button>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero wrap">
+      <div class="hero-copy reveal">
+        <div class="eyebrow"><span class="eyebrow-dot"></span> A calmer way to do your best learning</div>
+        <h1>Big ideas,<br><span class="gradient-words">beautifully clear.</span></h1>
+        <p class="hero-lede">Meet the AI workspace that turns confusing concepts into visual understanding — and helps you shape your own ideas into polished academic reports.</p>
+        <div class="hero-actions">
+          {% if user %}<a class="button button-primary" href="/app">Continue learning <i data-lucide="arrow-right"></i></a>{% else %}<a class="button button-primary" href="/auth/google">Start with Google <i data-lucide="arrow-right"></i></a>{% endif %}
+          <a class="button button-ghost" href="#platform"><i data-lucide="play-circle"></i> Explore the workspace</a>
+        </div>
+        <div class="hero-proof"><div class="avatar-stack"><span>✦</span><span>◌</span><span>✳</span></div><span>Made for curious minds, from first questions to final drafts.</span></div>
+      </div>
+      <div class="hero-art reveal reveal-delay">
+        <div class="art-orbit orbit-a"></div><div class="art-orbit orbit-b"></div>
+        <div class="hero-orb"><div class="orb-core"><span class="orb-glyph">✳</span></div><span class="orb-shine"></span></div>
+        <div class="float-card float-card-top"><span class="mini-icon mini-lilac"><i data-lucide="brain-circuit"></i></span><span><b>Understand it</b><small>One clear step at a time</small></span><span class="float-check">✓</span></div>
+        <div class="float-card float-card-bottom"><span class="mini-icon mini-mint"><i data-lucide="file-check-2"></i></span><span><b>Make it yours</b><small>Thoughtful, print-ready reports</small></span></div>
+        <div class="orbit-chip chip-one">Curiosity → clarity</div><div class="orbit-chip chip-two">Your ideas, in focus</div>
+      </div>
+      <div class="hero-scroll"><span></span> SCROLL TO EXPLORE</div>
+    </section>
+
+    <section class="trust-strip wrap" id="trust"><span>ONE WORKSPACE</span><span class="trust-line"></span><span>VISUAL LEARNING</span><span class="trust-line"></span><span>ORIGINAL REPORTS</span><span class="trust-line"></span><span>STUDENT-FIRST AI</span></section>
+
+    <section class="section wrap" id="platform">
+      <div class="section-heading reveal"><div class="eyebrow">A thoughtful toolkit</div><h2>Two powerful ways<br>to move forward.</h2><p>Less tab switching. Less guesswork. More time spent understanding and creating.</p></div>
+      <div class="feature-grid">
+        <article class="feature-card feature-lilac reveal">
+          <div class="feature-topline"><span class="feature-index">01 / LEARN</span><span class="feature-icon"><i data-lucide="orbit"></i></span></div>
+          <div class="feature-illustration learning-illustration"><div class="learning-node node-a">Question</div><div class="learning-node node-b">Visual</div><div class="learning-node node-c">Aha!</div><svg viewBox="0 0 360 150" aria-hidden="true"><path d="M70 80 C130 10 180 145 240 65 S310 50 320 70" fill="none" stroke="rgba(119,94,190,.42)" stroke-width="2" stroke-dasharray="5 7"/><circle cx="70" cy="80" r="5" fill="#9a83dc"/><circle cx="240" cy="65" r="5" fill="#9a83dc"/><circle cx="320" cy="70" r="5" fill="#9a83dc"/></svg><div class="learning-spark">✧</div></div>
+          <h3>Visual Learning Assistant</h3><p>Ask anything. Get a clear explanation, relatable examples, step-by-step breakdowns, diagrams and quick knowledge checks.</p>
+          <ul class="feature-list"><li><i data-lucide="check"></i> Beginner-friendly explanations</li><li><i data-lucide="check"></i> Interactive diagrams and flowcharts</li><li><i data-lucide="check"></i> Examples, summaries and mini quizzes</li></ul>
+          <a class="text-link" href="/app?tab=tutor">Explore visual learning <i data-lucide="arrow-up-right"></i></a>
+        </article>
+        <article class="feature-card feature-peach reveal reveal-delay">
+          <div class="feature-topline"><span class="feature-index">02 / CREATE</span><span class="feature-icon"><i data-lucide="files"></i></span></div>
+          <div class="feature-illustration report-illustration"><div class="paper paper-back"></div><div class="paper paper-front"><div class="paper-mark"></div><div class="paper-line line-long"></div><div class="paper-line"></div><div class="paper-line line-short"></div><div class="paper-chart"><span></span><span></span><span></span><span></span><span></span></div></div><div class="report-star">✦</div><div class="report-tag">PDF · READY TO REVIEW</div></div>
+          <h3>AI Report Studio</h3><p>Use a reference layout you are authorized to reuse. Create original topic-specific content while retaining its visual identity where technically possible.</p>
+          <ul class="feature-list"><li><i data-lucide="check"></i> PDF structure and layout analysis</li><li><i data-lucide="check"></i> Original content for your project</li><li><i data-lucide="check"></i> Preview, fit checks and print export</li></ul>
+          <a class="text-link" href="/app?tab=reports">Explore report studio <i data-lucide="arrow-up-right"></i></a>
+        </article>
+      </div>
+    </section>
+
+    <section class="workflow-section" id="how"><div class="wrap workflow-wrap"><div class="section-heading reveal"><div class="eyebrow">Simple by design</div><h2>From “I’m stuck”<br>to “I’ve got this.”</h2><p>A focused flow that keeps the student in control at every step.</p></div><div class="steps-grid"><div class="step reveal"><span class="step-number">01</span><span class="step-icon"><i data-lucide="message-circle"></i></span><h3>Tell us what you need</h3><p>Ask a question or describe the project you are working on.</p></div><div class="step reveal reveal-delay"><span class="step-number">02</span><span class="step-icon"><i data-lucide="sparkles"></i></span><h3>Let LumiDesk help</h3><p>Get a structured explanation or a new report draft based on your instructions.</p></div><div class="step reveal reveal-delay-2"><span class="step-number">03</span><span class="step-icon"><i data-lucide="pencil-ruler"></i></span><h3>Review and refine</h3><p>Check the work, correct details and make it genuinely yours.</p></div><div class="step reveal reveal-delay-3"><span class="step-number">04</span><span class="step-icon"><i data-lucide="download"></i></span><h3>Take it with you</h3><p>Keep learning or export a document ready for your final review and printing.</p></div></div></div></section>
+
+    <section class="quote-section wrap reveal"><div class="quote-mark">“</div><blockquote>Good technology should make learning feel more human, not more complicated.</blockquote><p>THE LUMIDESK PRINCIPLE</p><div class="quote-orb"></div></section>
+
+    <section class="cta-section wrap reveal"><div class="cta-panel"><div class="cta-glow"></div><div class="cta-content"><div class="eyebrow eyebrow-light"><span class="eyebrow-dot"></span> Your next idea starts here</div><h2>Make room for<br><span>your next breakthrough.</span></h2><p>Bring your questions, your curiosity and your project ideas. We'll help you find the next clear step.</p>{% if user %}<a class="button button-white" href="/app">Open your workspace <i data-lucide="arrow-right"></i></a>{% else %}<a class="button button-white" href="/auth/google">Continue with Google <i data-lucide="arrow-right"></i></a>{% endif %}</div><div class="cta-graphic"><div class="cta-ring ring-1"></div><div class="cta-ring ring-2"></div><div class="cta-star">✳</div><span class="cta-orbit-dot"></span></div></div></section>
+  </main>
+
+  <footer class="site-footer"><div class="wrap footer-main"><div class="footer-brand"><a class="brand" href="/"><span class="brand-mark"><i data-lucide="sparkles"></i></span><span>LumiDesk<span class="brand-ai">AI</span></span></a><p>A little more clarity.<br>A lot more possibility.</p></div><div class="footer-col"><b>Explore</b><a href="#platform">Platform</a><a href="#how">How it works</a><a href="/app">Student workspace</a></div><div class="footer-col"><b>Workspace</b><a href="/app?tab=tutor">Visual learning</a><a href="/app?tab=reports">Report studio</a><a href="/admin">Admin portal</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div><div class="footer-col footer-note"><b>Made for learning</b><p>AI is a guide, not a substitute for your own thinking. Always review generated work and verify academic facts.</p></div></div><div class="wrap footer-bottom"><span>© <span id="year"></span> LumiDesk AI. Built for curious minds.</span><span class="footer-highlight">LEARN CLEARLY <i>✦</i> CREATE CONFIDENTLY</span><a href="mailto:hello@lumidesk.ai">Get in touch <i data-lucide="arrow-up-right"></i></a></div></footer>
+  <script src="/static/app.js"></script>
+</body></html>
