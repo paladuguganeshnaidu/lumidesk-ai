@@ -244,3 +244,18 @@ html[data-theme="light"] #billing-checkout{background:var(--ink);color:#FFFFFF}
  .workspace-page #tutor-panel .assistant-expand-button span{display:none}
  .workspace-page #tutor-panel .panel-heading{gap:7px}
 }
+
+/* Appearance remains accessible while the assistant is expanded. */
+.workspace-page #tutor-panel .assistant-theme-picker{display:none}
+.workspace-page.focused-assistant #tutor-panel .assistant-theme-picker{display:inline-flex;margin-left:auto}
+@media(max-width:760px){
+ .workspace-page .topbar-actions .admin-pill{display:none}
+ .billing-nav{height:auto;min-height:58px;display:flex;flex-wrap:wrap;justify-content:flex-start;gap:8px;padding-block:9px}
+ .billing-nav .billing-theme-control{margin-left:auto;margin-right:0}
+ .billing-nav nav{order:3;width:100%;justify-content:space-between;padding:3px 0}
+ .workspace-page.focused-assistant #tutor-panel .assistant-theme-picker{margin-left:auto}
+}
+@media(max-width:390px){
+ .portal-ready .portal-nav{gap:6px}
+ .portal-ready .portal-nav .p-pill{display:none}
+}
