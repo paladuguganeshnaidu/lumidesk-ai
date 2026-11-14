@@ -76,3 +76,26 @@
 .workspace-page .pdf-compare-grid img{display:block;max-width:100%;height:auto;background:#fff;border:1px solid var(--line)}
 .workspace-page .pdf-compare-verdict{margin:16px 0 0}
 @media(max-width:580px){.workspace-page .pdf-compare-grid{grid-template-columns:1fr}.workspace-page .pdf-compare-controls button{padding:8px 10px;font-size:11px}}
+
+/* Administrator-only database maintenance; follows the dark Syne/Sora interface. */
+.workspace-page .db-reset-card{max-width:920px}
+.workspace-page .db-reset-body{padding:clamp(18px,3vw,30px);display:grid;gap:20px}
+.workspace-page .db-reset-warning{display:flex;align-items:flex-start;gap:16px;border:1px solid rgba(232,145,60,.48);background:rgba(232,145,60,.055);padding:18px}
+.workspace-page .db-reset-warning>svg{color:var(--amber);flex:none;width:23px;height:23px}
+.workspace-page .db-reset-warning strong{color:var(--ink);font:700 18px var(--display)}
+.workspace-page .db-reset-warning p,.workspace-page .db-reset-note{margin:9px 0 0;color:var(--ink-muted);font-size:12px;line-height:1.75}
+.workspace-page .db-reset-body h3{font:700 19px var(--display);margin:4px 0 -7px;color:var(--ink)}
+.workspace-page .db-counts{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:10px}
+.workspace-page .db-counts>span{background:var(--dark);border:1px solid var(--line);padding:13px;min-width:0}
+.workspace-page .db-counts b{display:block;font:800 25px var(--display);color:var(--ink)}
+.workspace-page .db-counts small{display:block;color:var(--ink-muted);font-size:11px;margin-top:5px}
+.workspace-page .db-reset-check{display:flex;gap:12px;align-items:flex-start;color:var(--ink-muted);font-size:12px;line-height:1.6}
+.workspace-page .db-reset-check input{width:18px;height:18px;flex:none;margin-top:1px;accent-color:var(--amber)}
+.workspace-page .db-reset-label{color:var(--ink-muted);font-size:12px;display:block}
+.workspace-page .db-reset-label strong{color:var(--amber)}
+.workspace-page .db-reset-input{display:block;width:min(100%,480px);padding:13px 15px;border:1px solid var(--line);background:var(--dark);color:var(--ink);font-family:var(--font);font-size:13px}
+.workspace-page .db-reset-input:focus{outline:1px solid var(--amber)}
+.workspace-page .db-reset-button{display:inline-flex;align-items:center;justify-content:center;gap:10px;justify-self:start;min-height:46px;padding:12px 20px;background:transparent;border:1px solid var(--amber);color:var(--amber);font:600 12px var(--font);cursor:pointer}
+.workspace-page .db-reset-button svg{width:17px;height:17px}
+.workspace-page .db-reset-button:disabled{opacity:.3;cursor:not-allowed}
+.workspace-page .db-reset-button:not(:disabled):hover{background:rgba(232,145,60,.1)}
