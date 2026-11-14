@@ -17,7 +17,7 @@ from .db import PaymentOrder, StripeEvent, SessionLocal
 
 LOG = logging.getLogger(__name__)
 PRODUCTION_URL = "https://lumidesk-ai.onrender.com"
-ZERO_DECIMAL = frozenset("bif clp djf gnf jpy kmf krw mgn pyg rwf ugx vnd vuv xaf xof xpf".split())
+ZERO_DECIMAL = frozenset("bif clp djf gnf jpy kmf krw mga pyg rwf ugx vnd vuv xaf xof xpf".split())
 
 
 def _stripe():
@@ -211,11 +211,11 @@ def handle_webhook(payload: bytes, signature: str) -> dict:
         elif kind.startswith("customer.subscription."):
             subscription_id = obj.get("id")
             order = db.scalar(select(PaymentOrder).where(PaymentOrder.stripe_subscription_id == subscription_id))
-            if order is None:
-                # Subscription events can arrive before checkout.session.completed.
-                # Do not acknowledge an unlinked event; Stripe retries it.
+            if order is None and (obj.get("metadata") or {}).get("lumidesk_user_id"):
+                # Stripe events can arrive out of order. A relevant subscription
+                # is retried until its Checkout session is linked.
                 raise HTTPException(status_code=503, detail="Subscription not yet linked. Retry webhook.")
-            if kind in ("customer.subscription.created", "customer.subscription.updated", "customer.subscription.deleted"):
+            if order is not None and kind in ("customer.subscription.created", "customer.subscription.updated", "customer.subscription.deleted"):
                 order.status = str(obj.get("status") or ("canceled" if kind.endswith(".deleted") else "processing"))
         elif kind == "charge.refunded":
             intent = obj.get("payment_intent")

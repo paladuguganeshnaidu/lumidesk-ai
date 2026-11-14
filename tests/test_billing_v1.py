@@ -91,6 +91,15 @@ def test_checkout_and_signed_webhook_are_persisted_and_idempotent(monkeypatch, t
         order = db.scalar(select(PaymentOrder).where(PaymentOrder.stripe_session_id == "cs_test_example"))
         assert order.stripe_customer_id == "cus_fake"
 
+    unrelated = {"id": "evt_unrelated", "livemode": False, "type": "customer.subscription.created",
+                 "data": {"object": {"id": "sub_another_product", "metadata": {}, "status": "active"}}}
+    assert billing.handle_webhook(json.dumps(unrelated).encode(), "signed-by-stripe") == {"received": True}
+    pending_own = {"id": "evt_early_subscription", "livemode": False, "type": "customer.subscription.created",
+                   "data": {"object": {"id": "sub_pending", "metadata": {"lumidesk_user_id": "123"}, "status": "active"}}}
+    with pytest.raises(HTTPException) as early:
+        billing.handle_webhook(json.dumps(pending_own).encode(), "signed-by-stripe")
+    assert early.value.status_code == 503
+
     refund = {"id": "evt_refund", "livemode": False, "type": "charge.refunded",
               "data": {"object": {"payment_intent": "pi_fake", "refunded": True}}}
     billing.handle_webhook(json.dumps(refund).encode(), "signed-by-stripe")
