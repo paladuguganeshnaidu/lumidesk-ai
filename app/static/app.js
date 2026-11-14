@@ -395,6 +395,7 @@
 
     $('#download-again')?.addEventListener('click', () => downloadFormat('pdf'));
     $('#download-word')?.addEventListener('click', () => downloadFormat('docx'));
+    $('#edit-report-images')?.addEventListener('click', () => reportImageEditor.open(latestCompletedJob?.job_id, updated => {latestCompletedJob = updated;}));
     $('#create-another')?.addEventListener('click', () => {
       if (active) return;
       form.reset(); input.value = '';
@@ -489,6 +490,7 @@
     }
     $('#approved-download-pdf')?.addEventListener('click', ()=>retrieve('pdf'));
     $('#approved-download-word')?.addEventListener('click', ()=>retrieve('docx'));
+    $('#edit-approved-images')?.addEventListener('click',()=>reportImageEditor.open(job?.job_id,updated=>{job=updated;$('#approved-download-word').disabled=!updated.downloads?.docx;}));
     form.addEventListener('submit', async event => {
       event.preventDefault();if(running)return;
       if(!fileInput.files?.[0]) {reportError('Upload the approved PDF first.');return;}
@@ -511,6 +513,83 @@
       finally {showProgress(false);}
     });
   }
+
+  // Image edits happen on the completed PDF: text is never re-generated.
+  function initImageEditor() {
+    const modal = $('#image-edit-modal'), grid = $('#image-editor-grid');
+    const chooser = $('#image-editor-upload'), status = $('#image-editor-status');
+    if (!modal || !grid || !chooser || !status) return {open: () => {}};
+    let jobId = '', chosenSlot = '', busy = false, wordReady = false, previousFocus = null, afterSave = null;
+    const say = message => {status.textContent = message;};
+    const close = () => {if (busy) return; modal.classList.add('hidden'); document.body.style.overflow=''; previousFocus?.focus?.();};
+    const filename = response => (response.headers.get('content-disposition') || '').match(/filename="?([^";]+)/i)?.[1] || 'LumiDesk_Report.pdf';
+    async function getFile(format) {
+      if (busy) return;
+      try {
+        const response = await api(`/api/reports/jobs/${encodeURIComponent(jobId)}/download?format=${format}`);
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob), a = document.createElement('a');
+        a.href=url;a.download=filename(response);document.body.append(a);a.click();a.remove();
+        setTimeout(()=>URL.revokeObjectURL(url),30000);
+      } catch(e) {say(e.message || 'Download unavailable.');}
+    }
+    async function refresh() {
+      const res = await api(`/api/reports/jobs/${encodeURIComponent(jobId)}/images`);
+      const data = await res.json();grid.replaceChildren();
+      if (!data.images.length) {grid.textContent = 'No replaceable images were detected in this report.';return;}
+      for (const item of data.images) {
+        const tile = document.createElement('article');tile.className='image-editor-card';
+        const top = document.createElement('div');top.className='image-editor-card-top';
+        const title = document.createElement('span');title.textContent=`Page ${item.page} · Image ${item.index}`;
+        const flag = document.createElement('small');flag.textContent=item.edited?'REPLACED':'ORIGINAL';top.append(title,flag);
+        const picture=document.createElement('img');picture.alt=`Preview of image ${item.index} on page ${item.page}`;picture.loading='lazy';
+        picture.src=item.preview_url+'?v='+Date.now();
+        const buttons=document.createElement('div');buttons.className='image-editor-card-actions';
+        const replace=document.createElement('button');replace.type='button';replace.textContent='Choose photo';
+        replace.addEventListener('click',()=>{if(!busy){chosenSlot=item.id;chooser.value='';chooser.click();}});
+        buttons.append(replace);
+        if(item.edited){const restore=document.createElement('button');restore.type='button';restore.textContent='Restore original';
+          restore.addEventListener('click',()=>save(`${item.id}/restore`,null));buttons.append(restore);}
+        tile.append(top,picture,buttons);grid.append(tile);
+      }
+      $('#image-editor-word').disabled = !wordReady;
+      say(`${data.count} image positions found · ${data.edited_count} replaced. Images are cropped to their existing frames.`);
+    }
+    async function save(path, file) {
+      if (busy) return;
+      busy=true;grid.setAttribute('aria-busy','true');say('Saving image and rebuilding PDF and Word…');
+      try {
+        const data = file ? new FormData() : undefined;if(data)data.set('file',file);
+        const r = await api(`/api/reports/jobs/${encodeURIComponent(jobId)}/images/${encodeURIComponent(path.split('/')[0])}/${path.endsWith('/restore')?'restore':'replace'}`,{method:'POST',body:data});
+        const updated=await r.json();
+        wordReady=!!updated.downloads?.docx;
+        $('#image-editor-word').disabled=!wordReady;
+        afterSave?.(updated);
+        await refresh();
+        if(!updated.downloads?.docx)say('PDF updated, but Word export is unavailable for this edit.');
+      }catch(e){say(e.message||'Could not save this image; previous downloads remain intact.');}
+      finally{busy=false;grid.removeAttribute('aria-busy');}
+    }
+    chooser.addEventListener('change',()=>{
+      const file=chooser.files?.[0];if(!file||!chosenSlot)return;
+      if(file.size>8*1024*1024){say('Choose an image smaller than 8 MB.');return;}
+      save(`${chosenSlot}/replace`,file);
+    });
+    $('#image-editor-close').addEventListener('click',close);
+    $('#image-editor-done').addEventListener('click',close);
+    $('#image-editor-pdf').addEventListener('click',()=>getFile('pdf'));
+    $('#image-editor-word').addEventListener('click',()=>getFile('docx'));
+    modal.addEventListener('click',event=>{if(event.target===modal)close();});
+    document.addEventListener('keydown',event=>{if(event.key==='Escape'&&!modal.classList.contains('hidden'))close();});
+    return {open: async(id,callback) => {
+      if(!id)return;
+      previousFocus=document.activeElement;jobId=id;afterSave=callback;wordReady=false;modal.classList.remove('hidden');
+      document.body.style.overflow='hidden';$('#image-editor-close').focus();
+      grid.textContent='Loading report images…';
+      try{const live=await (await api(`/api/reports/jobs/${encodeURIComponent(jobId)}`)).json();wordReady=!!live.downloads?.docx;await refresh();}catch(e){say(e.message||'The report images could not be loaded.');}
+    }};
+  }
+  const reportImageEditor = initImageEditor();
 
   // Fully offline-friendly personal study sprint; does not consume AI quota.
   function initStudySprint(userId) {

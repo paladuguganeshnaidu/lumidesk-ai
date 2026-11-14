@@ -51,6 +51,9 @@ class ReportJob:
     total_sections: int = 0
     result: bytes | None = None
     word_result: bytes | None = None
+    base_result: bytes | None = None  # unmodified generated PDF for reversible image edits
+    image_edits: dict[str, bytes] = field(default_factory=dict)
+    edit_busy: bool = False
     pages: list[dict] | None = None
     warnings: list[str] = field(default_factory=list)
     overlap: float | None = None
@@ -122,6 +125,9 @@ def public_job(job: ReportJob) -> dict[str, Any]:
             'docx': f'/api/reports/jobs/{job.id}/download?format=docx' if job.status == 'completed' and job.word_result else None,
         },
         'regenerate_url': f'/api/reports/jobs/{job.id}/regenerate' if job.status == 'completed' else None,
+        'image_edit_url': f'/api/reports/jobs/{job.id}/images' if job.status == 'completed' and job.result else None,
+        'image_edit_count': len(job.image_edits),
+        'image_edit_busy': job.edit_busy,
         'error': job.error,
         'temporary': True,
     }

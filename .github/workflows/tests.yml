@@ -33,4 +33,6 @@ jobs:
           python -m pip install playwright
           python -m playwright install --with-deps chromium
       - name: Browser E2E smoke test
-        run: python tests/browser_smoke_v5.py
+        run: |
+          python tests/browser_smoke_v5.py
+          python tests/browser_image_editor_v7.py

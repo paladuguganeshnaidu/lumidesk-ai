@@ -30,6 +30,8 @@ from .pdf_engine import inspect_pdf, render_replacement_pdf
 from .typography import summarize_typography
 from .report_pipeline import extract_template_details, content_slots, build_plan, extract_approved_reference_context
 from .report_jobs import create_job, for_user, public_job
+from .image_editor import MAX_IMAGE_BYTES, image_slots, normalize_upload, apply_replacements, slot_preview
+from .docx_export import export_editable_docx
 from .security import csrf_token, current_user, require_admin, require_csrf
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -318,6 +320,107 @@ def download_report_job(job_id: str, request: Request, format: str = "pdf"):
             "X-Report-Warnings": str(len(job.warnings)),
         },
     )
+
+
+@app.get('/api/reports/jobs/{job_id}/images')
+def report_image_list(job_id: str, request: Request):
+    """Discover each individual image placement after a report is generated."""
+    user = current_user(request)
+    job = for_user(job_id, user['id'])
+    if not job:
+        raise HTTPException(status_code=404, detail='Report not found or expired.')
+    if job.status != 'completed' or not job.result:
+        raise HTTPException(status_code=409, detail='Generate the report before editing its images.')
+    base = job.base_result or job.result
+    images = image_slots(base)
+    for slot in images:
+        slot['edited'] = slot['id'] in job.image_edits
+        slot['preview_url'] = f'/api/reports/jobs/{job.id}/images/{slot["id"]}/preview'
+    return {'images': images, 'count': len(images), 'edited_count': len(job.image_edits),
+            'busy': job.edit_busy, 'temporary': True}
+
+
+@app.get('/api/reports/jobs/{job_id}/images/{slot_id}/preview')
+def report_image_preview(job_id: str, slot_id: str, request: Request):
+    user = current_user(request)
+    job = for_user(job_id, user['id'])
+    if not job or not job.result or job.status != 'completed':
+        raise HTTPException(status_code=404, detail='Report not found or expired.')
+    slot = next((s for s in image_slots(job.base_result or job.result) if s['id'] == slot_id), None)
+    if slot is None:
+        raise HTTPException(status_code=404, detail='Image placement not found.')
+    return Response(content=slot_preview(job.result, slot), media_type='image/png',
+                    headers={'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff'})
+
+
+async def _edit_report_image(job, slot_id: str, image_data: bytes | None):
+    """Keep both export formats in sync. If anything fails, retain the last valid downloads."""
+    if job.status != 'completed' or not job.result:
+        raise HTTPException(status_code=409, detail='Generate the report before editing images.')
+    if job.edit_busy:
+        raise HTTPException(status_code=409, detail='Another image edit is being saved. Try again.')
+    base = job.base_result or job.result
+    if slot_id not in {s['id'] for s in image_slots(base)}:
+        raise HTTPException(status_code=404, detail='Image placement not found. Refresh the editor.')
+    changes = dict(job.image_edits)
+    if image_data is None:
+        if slot_id not in changes:
+            return public_job(job)
+        changes.pop(slot_id)
+    else:
+        if len(changes) >= 100 and slot_id not in changes:
+            raise HTTPException(status_code=422, detail='This report already has 100 image replacements.')
+        try:
+            changes[slot_id] = normalize_upload(image_data)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+    job.edit_busy = True
+    try:
+        new_pdf = await asyncio.to_thread(apply_replacements, base, changes)
+        try:
+            new_docx, word_warnings = await asyncio.to_thread(export_editable_docx, new_pdf)
+        except Exception:
+            logging.exception('Word export after image replacement failed: %s', job.id)
+            new_docx = None  # never return an outdated Word file beside the new PDF
+        # Atomic swap only after successfully generating a verified PDF.
+        job.base_result = base
+        job.image_edits = changes
+        job.result = new_pdf
+        job.word_result = new_docx
+        job.detail = 'Image edits saved. Download the updated PDF and Word file.' if new_docx else 'Edited PDF ready. Word export was unavailable.'
+        if changes and not any('Replaced photos must' in w for w in job.warnings):
+            job.warnings.append('Replaced photos must show your actual work. Review image captions and evidence before submission.')
+        return public_job(job)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc:
+        logging.exception('Report image edit failed: %s', job.id)
+        raise HTTPException(status_code=502, detail='Could not save the selected image. Original downloads are unchanged.') from exc
+    finally:
+        job.edit_busy = False
+
+
+@app.post('/api/reports/jobs/{job_id}/images/{slot_id}/replace')
+async def replace_report_image(job_id: str, slot_id: str, request: Request, file: UploadFile = File(...)):
+    require_csrf(request)
+    user = current_user(request)
+    job = for_user(job_id, user['id'])
+    if not job:
+        raise HTTPException(status_code=404, detail='Report not found or expired.')
+    payload = await file.read(MAX_IMAGE_BYTES + 1)
+    if len(payload) > MAX_IMAGE_BYTES:
+        raise HTTPException(status_code=413, detail='Image must be smaller than 8 MB.')
+    return await _edit_report_image(job, slot_id, payload)
+
+
+@app.post('/api/reports/jobs/{job_id}/images/{slot_id}/restore')
+async def restore_report_image(job_id: str, slot_id: str, request: Request):
+    require_csrf(request)
+    user = current_user(request)
+    job = for_user(job_id, user['id'])
+    if not job:
+        raise HTTPException(status_code=404, detail='Report not found or expired.')
+    return await _edit_report_image(job, slot_id, None)
 
 
 @app.post("/api/reports/jobs/{job_id}/regenerate", status_code=202)
