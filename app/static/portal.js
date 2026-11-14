@@ -25,7 +25,7 @@ var process=[
 $$('.ambient').forEach(function(n){n.remove()});
 $('.site-header')?.remove();$('.site-footer')?.remove();
 var nav=document.createElement('header');nav.className='portal-nav';
-nav.innerHTML='<a class="p-brand" href="/">LUMIDESK<span>.</span></a><nav class="p-nav-links" id="p-navigation" aria-label="Primary navigation"><a href="#vision">VISION</a><a href="#tools">THE TOOLS</a><a href="#capabilities">CAPABILITIES</a><a href="#process">PROCESS</a></nav><a class="p-pill" href="'+destination+'">ENTER STUDIO ↗</a><button type="button" class="p-menu" aria-controls="p-navigation" aria-expanded="false" aria-label="Toggle menu">☰</button>';
+nav.innerHTML='<a class="p-brand" href="/">LUMIDESK<span>.</span></a><nav class="p-nav-links" id="p-navigation" aria-label="Primary navigation"><a href="#vision">VISION</a><a href="#tools">THE TOOLS</a><a href="#capabilities">CAPABILITIES</a><a href="#process">PROCESS</a></nav><div class="theme-picker" role="group" aria-label="Choose appearance"><button type="button" class="theme-option" data-theme-choice="light" aria-pressed="false" title="Light appearance"><span aria-hidden="true">☀</span><span>Light</span></button><button type="button" class="theme-option" data-theme-choice="dark" aria-pressed="true" title="Dark appearance"><span aria-hidden="true">☾</span><span>Dark</span></button></div><a class="p-pill" href="'+destination+'">ENTER STUDIO ↗</a><button type="button" class="p-menu" aria-controls="p-navigation" aria-expanded="false" aria-label="Toggle menu">☰</button>';
 document.body.insertBefore(nav,main);
 main.innerHTML=
 '<a class="p-skip" href="#vision">Skip to content</a>'+
