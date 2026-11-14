@@ -657,11 +657,44 @@
       const data = await (await api('/api/admin/overview')).json(); renderAdmin(data);
       $$('[data-admin-tab]').forEach(button=>button.addEventListener('click',()=>selectAdminTab(button.dataset.adminTab)));
       $('#user-search')?.addEventListener('input',filterUsers);
+      const resetInput = $('#database-reset-confirm');
+      const resetBilling = $('#database-reset-billing');
+      const resetButton = $('#database-reset-button');
+      const updateResetReady = () => {
+        if (resetButton) resetButton.disabled = !(resetInput?.value === 'DELETE ALL LUMIDESK DATA' && resetBilling?.checked);
+      };
+      resetInput?.addEventListener('input', updateResetReady);
+      resetBilling?.addEventListener('change', updateResetReady);
+      resetButton?.addEventListener('click', async () => {
+        if (resetButton.disabled) return;
+        if (!confirm('FINAL CONFIRMATION: Delete ALL LumiDesk users, reports, usage, and local payment records? This cannot be undone.')) return;
+        resetButton.disabled = true;
+        resetButton.textContent = 'Clearing database…';
+        try {
+          const response = await api('/api/admin/database/reset', {
+            method:'POST', headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({confirmation:resetInput.value,acknowledge_billing:resetBilling.checked})
+          });
+          const result = await response.json();
+          if (!result.ok) throw new Error('The database could not be reset.');
+          alert('Database cleared. Every account must sign in again.');
+          location.href = '/auth/google';
+        } catch (error) {
+          toast(error.message);
+          resetButton.textContent = 'Permanently clear database';
+          updateResetReady();
+        }
+      });
     } catch(e) { toast(e.message); }
   }
   let adminData = null;
   function renderAdmin(data) {
     adminData=data; const m=data.metrics;
+    const dbCounts = $('#db-reset-counts');
+    if (dbCounts && data.database_counts) {
+      const labels = [['users','Accounts'],['usage_events','Usage logs'],['reports','Reports'],['payment_orders','Payment orders'],['stripe_events','Stripe events']];
+      dbCounts.innerHTML = labels.map(([key,label]) => `<span><b>${Number(data.database_counts[key] || 0).toLocaleString()}</b><small>${label}</small></span>`).join('');
+    }
     [['metric-users',m.users],['metric-active',m.active_7d],['metric-reports',m.reports],['metric-tutor',m.tutor_calls_7d]].forEach(([id,v])=>{const el=$(`#${id}`);if(el)el.textContent=Number(v||0).toLocaleString();});
     setStatus('google-status',data.system.google_configured);setStatus('ai-status',data.system.ai_configured);
     const db=$('#db-status');if(db){db.textContent=data.system.database.includes('ephemeral')?'SQLITE · TEMPORARY':'POSTGRESQL';db.className=data.system.database.includes('ephemeral')?'status-missing':'status-ok';}
@@ -672,6 +705,6 @@
     $$('[data-toggle-user]').forEach(button=>button.addEventListener('click',async()=>{if(!confirm('Change access for this student?'))return;try{await api(`/api/admin/users/${button.dataset.toggleUser}/toggle`,{method:'POST'});const refreshed=await (await api('/api/admin/overview')).json();renderAdmin(refreshed);toast('Student access updated.');}catch(e){toast(e.message);}}));
   }
   function setStatus(id,ok){const el=$(`#${id}`);if(!el)return;el.textContent=ok?'CONNECTED':'NOT CONFIGURED';el.className=ok?'status-ok':'status-missing';}
-  function selectAdminTab(tab){$$('[data-admin-tab]').forEach(b=>b.classList.toggle('active',b.dataset.adminTab===tab));['overview','users','reports'].forEach(t=>$(`#admin-${t}`)?.classList.toggle('hidden',t!==tab));$('.app-sidebar')?.classList.remove('mobile-open');}
+  function selectAdminTab(tab){$$('[data-admin-tab]').forEach(b=>b.classList.toggle('active',b.dataset.adminTab===tab));['overview','users','reports','database'].forEach(t=>$(`#admin-${t}`)?.classList.toggle('hidden',t!==tab));$('.app-sidebar')?.classList.remove('mobile-open');}
   function filterUsers(){const q=($('#user-search')?.value||'').toLowerCase();$$('[data-user-row]').forEach(row=>row.classList.toggle('hidden',!row.textContent.toLowerCase().includes(q)));}
 })();
