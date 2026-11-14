@@ -119,3 +119,37 @@ def test_live_mode_requires_explicit_switch(monkeypatch):
     monkeypatch.setenv("STRIPE_CHECKOUT_MODE", "payment")
     monkeypatch.delenv("STRIPE_LIVE_ENABLED", raising=False)
     assert billing.configuration()["ready"] is False
+
+
+def test_subscription_portal_is_scoped_to_payments_owner(monkeypatch, tmp_path):
+    monkeypatch.setenv("DATABASE_URL", "postgresql://configured")
+    monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_test_example_for_mock")
+    monkeypatch.setenv("STRIPE_PRICE_ID", "price_sub")
+    monkeypatch.setenv("STRIPE_WEBHOOK_SECRET", "whsec_example")
+    monkeypatch.setenv("STRIPE_CHECKOUT_MODE", "subscription")
+    engine = create_engine("sqlite:///" + str(tmp_path / "portal-test.db"))
+    Base.metadata.create_all(engine)
+    factory = sessionmaker(bind=engine)
+    monkeypatch.setattr(billing, "SessionLocal", factory)
+    calls = []
+    class Portal:
+        @staticmethod
+        def create(**kwargs):
+            calls.append(kwargs)
+            return {"url": "https://billing.stripe.com/p/session/test"}
+    monkeypatch.setattr(billing, "_stripe", lambda: SimpleNamespace(
+        billing_portal=SimpleNamespace(Session=Portal)))
+    with factory() as db:
+        db.add(PaymentOrder(
+            user_id=15, stripe_session_id="cs_test_one", stripe_customer_id="cus_test_owner",
+            mode="subscription", status="active", currency="INR",
+            amount_minor=990, price_id="price_sub"))
+        db.commit()
+    assert billing.can_manage_subscription(15) is True
+    assert billing.can_manage_subscription(16) is False
+    with pytest.raises(HTTPException) as other:
+        billing.create_customer_portal(16)
+    assert other.value.status_code == 409
+    portal = billing.create_customer_portal(15)
+    assert portal["url"].startswith("https://billing.stripe.com/")
+    assert calls == [{"customer": "cus_test_owner", "return_url": "https://lumidesk-ai.onrender.com/billing"}]

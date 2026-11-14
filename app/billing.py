@@ -135,6 +135,38 @@ def history(user_id: int) -> list[dict]:
                  "amount_minor": o.amount_minor, "created_at": o.created_at.isoformat()} for o in entries]
 
 
+
+def can_manage_subscription(user_id: int) -> bool:
+    with SessionLocal() as db:
+        return db.scalar(select(PaymentOrder.id).where(
+            PaymentOrder.user_id == user_id, PaymentOrder.mode == "subscription",
+            PaymentOrder.stripe_customer_id.is_not(None)
+        ).limit(1)) is not None
+
+
+def create_customer_portal(user_id: int) -> dict:
+    if not configuration()["ready"]:
+        raise HTTPException(status_code=503, detail="Stripe billing has not been enabled.")
+    with SessionLocal() as db:
+        order = db.scalar(select(PaymentOrder).where(
+            PaymentOrder.user_id == user_id, PaymentOrder.mode == "subscription",
+            PaymentOrder.stripe_customer_id.is_not(None)
+        ).order_by(PaymentOrder.created_at.desc()).limit(1))
+        if order is None:
+            raise HTTPException(status_code=409, detail="No Stripe subscription found for this account.")
+        customer = str(order.stripe_customer_id)
+    stripe = _stripe()
+    try:
+        session = stripe.billing_portal.Session.create(customer=customer, return_url=_base_url() + "/billing")
+        url = str(session.get("url") or "")
+        if not url.startswith("https://billing.stripe.com/"):
+            raise ValueError("Stripe portal URL not returned")
+        return {"url": url}
+    except Exception as exc:
+        LOG.exception("Stripe customer portal creation failed")
+        raise HTTPException(status_code=502, detail="The Stripe billing portal could not be opened. Ask the site owner to enable it in Stripe.") from exc
+
+
 def handle_webhook(payload: bytes, signature: str) -> dict:
     if len(payload) > 128 * 1024:
         raise HTTPException(status_code=413, detail="Webhook body too large.")

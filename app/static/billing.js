@@ -47,6 +47,8 @@
       const data = await res.json();
       if (!res.ok) throw Error(data.detail || 'Your payment history is unavailable.');
       const payments = Array.isArray(data.payments) ? data.payments : [];
+      const portal = $('billing-portal');
+      if (portal) portal.hidden = !Boolean(data.can_manage_subscription);
       if (!payments.length) { holder.textContent = 'No payments have been recorded on this account.'; return; }
       holder.replaceChildren();
       for (const p of payments) {
@@ -67,6 +69,22 @@
       }
     } catch (e) { holder.textContent = e.message || 'Unable to load billing history.'; }
   }
+
+
+  $('billing-portal')?.addEventListener('click', async () => {
+    const portalButton = $('billing-portal');
+    portalButton.disabled = true;
+    try {
+      const res = await fetch('/api/billing/portal', {
+        method:'POST', credentials:'same-origin',
+        headers:{'x-csrf-token':csrf, 'content-type':'application/json'}, body:'{}'
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Unable to open Stripe billing portal.');
+      if (!data.url || !data.url.startsWith('https://billing.stripe.com/')) throw new Error('Invalid Stripe portal URL.');
+      window.location.assign(data.url);
+    } catch (e) { notice(e.message || 'Stripe billing portal unavailable.', true); portalButton.disabled = false; }
+  });
 
   button.addEventListener('click', async () => {
     if (!configured || !authenticated) return;

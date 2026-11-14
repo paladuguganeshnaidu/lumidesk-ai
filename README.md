@@ -138,6 +138,8 @@ LumiDesk includes an optional **Stripe-hosted Checkout** page at `/billing`. It 
 5. Set `PUBLIC_BASE_URL=https://lumidesk-ai.onrender.com`. Start with `STRIPE_CHECKOUT_MODE=payment` and `STRIPE_LIVE_ENABLED=false`. Use a matching **one-time** test Price. Test payments with Stripe test cards and verify signed webhook delivery and payment history.
 6. Only when business onboarding and payment verification are complete, switch to the correct live Stripe key, live Price and live webhook secret, and explicitly set `STRIPE_LIVE_ENABLED=true`.
 
+For recurring prices, enable the **Customer portal** in your Stripe Dashboard to let subscribers manage or cancel their subscription. The `/billing` page shows the portal control only after a confirmed Stripe customer is linked to the signed-in account. Configure the portal's permitted cancellation options in Stripe before offering subscriptions.
+
 Stripe may require an invitation and additional verification for merchants based in India. Never commit API keys or webhook signing secrets. A Stripe return URL never grants a paid entitlement; only verified webhook events can update a payment's status. Billing is separate from learning quotas, so pricing or premium benefits must be explicitly defined before selling upgrades.
 
 ## Repository layout

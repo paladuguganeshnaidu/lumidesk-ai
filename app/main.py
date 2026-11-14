@@ -33,7 +33,7 @@ from .report_jobs import create_job, for_user, public_job
 from .image_editor import MAX_IMAGE_BYTES, image_slots, normalize_upload, apply_replacements, slot_preview
 from .docx_export import export_editable_docx
 from .security import csrf_token, current_user, require_admin, require_csrf
-from .billing import price_info as billing_price_info, create_checkout, handle_webhook, history as billing_history
+from .billing import price_info as billing_price_info, create_checkout, create_customer_portal, can_manage_subscription, handle_webhook, history as billing_history
 
 BASE_DIR = Path(__file__).resolve().parent
 APP_ENV = os.getenv("APP_ENV", "development").lower()
@@ -140,7 +140,7 @@ def billing_config():
 @app.get("/api/billing/history")
 def billing_payments(request: Request):
     user = current_user(request)
-    return {"payments": billing_history(int(user["id"]))}
+    return {"payments": billing_history(int(user["id"])), "can_manage_subscription": can_manage_subscription(int(user["id"]))}
 
 
 @app.post("/api/billing/checkout")
@@ -148,6 +148,13 @@ async def billing_checkout(request: Request):
     require_csrf(request)
     user = current_user(request)
     return await asyncio.to_thread(create_checkout, user)
+
+
+@app.post("/api/billing/portal")
+async def billing_portal(request: Request):
+    require_csrf(request)
+    user = current_user(request)
+    return await asyncio.to_thread(create_customer_portal, int(user["id"]))
 
 
 @app.post("/api/billing/webhook")
