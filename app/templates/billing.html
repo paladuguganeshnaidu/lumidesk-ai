@@ -7,11 +7,12 @@
   <title>Billing · LumiDesk AI</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600&family=Syne:wght@600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/billing.css?v=1">
+  <link rel="stylesheet" href="/static/billing.css?v=1"><link rel="stylesheet" href="/static/theme-switch.css?v=1"><script src="/static/theme-switch.js?v=1"></script>
 </head>
 <body data-csrf="{{ csrf }}" data-authenticated="{{ 'yes' if user else 'no' }}">
   <header class="billing-nav">
     <a class="wordmark" href="/">LumiDesk<span>.</span></a>
+    <div class="billing-theme-control"><div class="theme-picker" role="group" aria-label="Choose appearance"><button type="button" class="theme-option" data-theme-choice="light" aria-pressed="false" title="Light appearance"><span aria-hidden="true">☀</span><span>Light</span></button><button type="button" class="theme-option" data-theme-choice="dark" aria-pressed="true" title="Dark appearance"><span aria-hidden="true">☾</span><span>Dark</span></button></div></div>
     <nav aria-label="Billing navigation">
       <a href="/">Home</a>
       <a href="/app">Workspace</a>
