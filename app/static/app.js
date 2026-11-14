@@ -136,6 +136,16 @@
   function selectTab(tab) {
     const panels = {tutor:'tutor-panel', reports:'reports-panel', reference:'reference-panel', focus:'focus-panel'};
     const activeTab = panels[tab] ? tab : 'tutor';
+    if (activeTab !== 'tutor' && document.body.classList.contains('focused-assistant')) {
+      document.body.classList.remove('focused-assistant');
+      const focus = $('#assistant-expand');
+      if (focus) {
+        focus.setAttribute('aria-pressed', 'false');
+        focus.setAttribute('aria-label', 'Enter full-screen focus view');
+        const label = focus.querySelector('span');
+        if (label) label.textContent = 'Focus view';
+      }
+    }
     Object.entries(panels).forEach(([key, id]) => document.getElementById(id)?.classList.toggle('hidden', key !== activeTab));
     $$('[data-tab]').forEach(button => button.classList.toggle('active', button.dataset.tab === activeTab));
     const crumb = $('#breadcrumb-current'); if (crumb) crumb.textContent = {tutor:'VISUAL LEARNING',reports:'REPORT STUDIO',reference:'APPROVED REFERENCE',focus:'STUDY SPRINT'}[activeTab];
@@ -158,6 +168,20 @@
   function initTutor() {
     const form = $('#tutor-form'), input = $('#tutor-message'), chat = $('#chat-area');
     if (!form || !input || !chat) return;
+    const focus = $('#assistant-expand');
+    const setFocus = enabled => {
+      document.body.classList.toggle('focused-assistant', enabled);
+      if (focus) {
+        focus.setAttribute('aria-pressed', String(enabled));
+        focus.setAttribute('aria-label', enabled ? 'Exit full-screen focus view' : 'Enter full-screen focus view');
+        const label = focus.querySelector('span');
+        if (label) label.textContent = enabled ? 'Exit focus' : 'Focus view';
+      }
+    };
+    focus?.addEventListener('click', () => setFocus(!document.body.classList.contains('focused-assistant')));
+    document.addEventListener('keydown', event => {
+      if (event.key === 'Escape' && document.body.classList.contains('focused-assistant')) setFocus(false);
+    });
     $$('.prompt-chip').forEach(chip => chip.addEventListener('click', () => { input.value = chip.dataset.prompt || ''; input.focus(); }));
     form.addEventListener('submit', async event => {
       event.preventDefault();
