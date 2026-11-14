@@ -8,7 +8,7 @@ from .typography import annotate_typography
 FONT_DIR = Path(__file__).resolve().parent / "fonts"
 
 MAX_PAGES = 70
-MAX_BLOCKS = 6500
+MAX_BLOCKS = 16000
 
 
 def _clean_text(text: str) -> str:
@@ -75,7 +75,7 @@ def inspect_pdf(data: bytes) -> tuple[fitz.Document, dict]:
         pages.append(page_data)
     if total_blocks == 0:
         doc.close()
-        raise ValueError("No selectable text was found. This looks like a scanned PDF; OCR support is not enabled in this free build.")
+        raise ValueError("No selectable text was found. This is an image-only or scanned PDF. Upload a searchable PDF with selectable text; exact text and font reconstruction cannot be guaranteed from scans.")
     template = {"page_count": len(doc), "pages": pages}
     return doc, template
 

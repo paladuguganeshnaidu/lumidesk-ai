@@ -18,21 +18,77 @@ def _client():
     return AsyncOpenAI(api_key=key, base_url=os.getenv("NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1"), timeout=100.0, max_retries=2)
 
 
+async def _completion(client, *, messages: list[dict], max_tokens: int, temperature: float):
+    """NVIDIA Nemotron direct answer; retry models that reject NIM options."""
+    import logging
+    model = os.getenv("NVIDIA_MODEL", "nvidia/nemotron-3.5-lightning-30b-a3b")
+    payload = dict(model=model, messages=messages, temperature=temperature,
+                   max_tokens=max_tokens,
+                   extra_body={"chat_template_kwargs": {"enable_thinking": False}})
+    try:
+        return await client.chat.completions.create(**payload)
+    except Exception as exc:
+        code = getattr(exc, "status_code", None)
+        if code in (400, 422):
+            payload.pop("extra_body", None)
+            try:
+                return await client.chat.completions.create(**payload)
+            except Exception as retry_error:
+                exc = retry_error
+                code = getattr(exc, "status_code", None)
+        logging.warning("NVIDIA inference failed: status=%s type=%s model=%s", code, type(exc).__name__, model[:100])
+        if code == 401:
+            detail = "NVIDIA rejected the configured API key. Check NVIDIA_API_KEY in Render."
+        elif code == 403:
+            detail = "The NVIDIA API key has no access to the selected model."
+        elif code == 404:
+            detail = "The configured NVIDIA_MODEL was not found. Check the model ID."
+        elif code == 429:
+            detail = "The NVIDIA API quota or rate limit was reached. Retry later."
+        elif code in (400, 422):
+            detail = "The NVIDIA model rejected its request format. Review NVIDIA_MODEL."
+        elif code and code >= 500:
+            detail = "NVIDIA is temporarily unavailable. Retry later."
+        else:
+            detail = "Unable to reach the NVIDIA model. Check endpoint and connection."
+        raise AIUnavailable(detail) from exc
+
+
+def _json_object(raw: str) -> dict | None:
+    import re
+    raw = (raw or "").strip()
+    fence = chr(96) * 3
+    if raw.startswith(fence):
+        raw = raw.split("\n", 1)[-1] if "\n" in raw else raw[3:]
+        raw = raw.rsplit(fence, 1)[0].strip()
+    try:
+        obj = json.loads(raw)
+        return obj if isinstance(obj, dict) else None
+    except (json.JSONDecodeError, ValueError):
+        start, end = raw.find("{"), raw.rfind("}")
+        if start >= 0 and end > start:
+            try:
+                obj = json.loads(raw[start:end + 1])
+                return obj if isinstance(obj, dict) else None
+            except (json.JSONDecodeError, ValueError):
+                pass
+    return None
+
+
 async def tutor_response(message: str, level: str = "beginner", style: str = "visual") -> dict:
     client = _client()
     system = """You are LumiDesk, a patient, accurate learning coach. Explain concepts in clear, simple English without talking down to the learner. Prefer a short overview, analogy, step-by-step explanation, practical example, key takeaways and one check-for-understanding question. Do not fabricate citations or claim to have browsed. If uncertain, say what needs checking. Return ONLY valid JSON with keys: title (string), explanation (string, markdown allowed), key_points (array of strings), steps (array of objects with title and detail), analogy (string), example (string), mermaid (string; valid Mermaid flowchart or sequence diagram, no markdown fences), quiz (array of objects with question, options array, answer_index integer, explanation). Keep mermaid simple and safe. Do not include HTML or scripts."""
-    response = await client.chat.completions.create(
-        model=os.getenv("NVIDIA_MODEL", "nvidia/nemotron-3.5-lightning-30b-a3b"),
-        messages=[{"role": "system", "content": system}, {"role": "user", "content": f"Learner level: {level}. Preferred style: {style}.\nQuestion: {message}"}],
-        temperature=0.35,
-        max_tokens=1800,
-        response_format={"type": "json_object"},
-    )
-    raw = response.choices[0].message.content or "{}"
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError:
-        data = {"title": "Let's understand this", "explanation": raw, "key_points": [], "steps": [], "analogy": "", "example": "", "mermaid": "", "quiz": []}
+    response = await _completion(client, messages=[
+        {"role": "system", "content": system},
+        {"role": "user", "content": f"Learner level: {level}. Preferred style: {style}.\nQuestion: {message}"},
+    ], temperature=0.35, max_tokens=3200)
+    raw = (response.choices[0].message.content or "").strip()
+    if not raw:
+        raise AIUnavailable("NVIDIA returned no final answer. Try again or check the model configuration.")
+    data = _json_object(raw)
+    if data is None:
+        data = {"title": "Learning explanation", "explanation": raw[:10000],
+                "key_points": [], "steps": [], "analogy": "", "example": "", "mermaid": "", "quiz": []}
     data.setdefault("title", "Let's understand this")
     data.setdefault("explanation", "")
     for key in ("key_points", "steps", "quiz"):
@@ -60,18 +116,11 @@ async def report_plan(*, topic: str, title: str, student: str, institution: str,
             "Every provided block_id must appear exactly once. Keep each text block concise enough to fit its original rectangle. Use the structural_label only as a layout cue; do not reproduce any original body text."
         ]
     }
-    response = await client.chat.completions.create(
-        model=os.getenv("NVIDIA_MODEL", "nvidia/nemotron-3.5-lightning-30b-a3b"),
-        messages=[
-            {"role": "system", "content": "You are an academic report editor. Produce original educational content and strict JSON. Respect academic integrity and never fabricate institutional approval."},
-            {"role": "user", "content": json.dumps(prompt, ensure_ascii=False)}
-        ],
-        temperature=0.25,
-        max_tokens=7000,
-        response_format={"type": "json_object"},
-    )
-    raw = response.choices[0].message.content or "{}"
-    data = json.loads(raw)
+    response = await _completion(client, messages=[
+        {"role": "system", "content": "You are an academic report editor. Produce original educational content and strict JSON. Never fabricate approval."},
+        {"role": "user", "content": json.dumps(prompt, ensure_ascii=False)},
+    ], temperature=0.25, max_tokens=7000)
+    data = _json_object(response.choices[0].message.content or "") or {}
     if not isinstance(data.get("pages"), list):
         raise ValueError("The AI response did not contain a valid page plan.")
     return data
@@ -325,13 +374,12 @@ async def rewrite_report_pages(*, title: str, topic: str, sections: list[dict],
                 async with gate:
                     for attempt in range(2):
                         try:
-                            answer = await asyncio.wait_for(client.chat.completions.create(
-                                model=os.getenv('NVIDIA_MODEL', 'nvidia/nemotron-3.5-lightning-30b-a3b'),
-                                messages=[{'role': 'system', 'content': prompt},
+                            answer = await asyncio.wait_for(_completion(
+                                client, messages=[{'role': 'system', 'content': prompt},
                                           {'role': 'user', 'content': json.dumps(payload, ensure_ascii=False)}],
                                 temperature=min(.8, .32 + variant_seed * .13 + attempt * .06),
-                                max_tokens=2400, response_format={'type': 'json_object'}
-                            ), timeout=55)
+                                max_tokens=2400
+                            ), timeout=75)
                             raw = (answer.choices[0].message.content or '').strip()
                             for item in decode_blocks(raw):
                                 try:

@@ -111,6 +111,33 @@ def content_slots(template: dict) -> list[dict]:
             items.append({"block_id": block["block_id"], "length": len(text), "sample": text[:260]})
         if items:
             all_pages.append({"page_index": idx, "section": section, "slots": items})
+    if not all_pages:
+        # Accept structurally different, still text-selectable reports. Many
+        # university templates have numbered or custom headings absent from
+        # REPORT_SECTIONS, but the content underneath remains editable.
+        for i, page in enumerate(template["pages"]):
+            if i == 0 and len(template["pages"]) > 1:
+                continue  # Do not rewrite institutional cover details.
+            header = " ".join(b["text"].lower() for b in page["blocks"][:14])
+            if any(x in header for x in PROTECTED_SECTIONS):
+                continue
+            candidates = []
+            for block in page["blocks"]:
+                txt = block["text"].strip()
+                y0, y1 = block["rect"][1], block["rect"][3]
+                if not (65 < y0 < y1 < page["height"]-55):
+                    continue
+                if len(txt) < 32 or len(txt.split()) < 5 or not re.search(r"[a-zA-Z]", txt):
+                    continue
+                if float(block.get("font_size", 12)) > 15.5:
+                    continue
+                if any(x in txt.lower() for x in LOCKED_PHRASES):
+                    continue
+                if txt.lower().startswith(("chapter", "figure", "fig.", "table", "signature", "approved")):
+                    continue
+                candidates.append({"block_id": block["block_id"], "length": len(txt), "sample": txt[:260]})
+            if len(candidates) >= 3:
+                all_pages.append({"page_index": i, "section": "Report body", "slots": candidates})
     return all_pages
 
 

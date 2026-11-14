@@ -27,6 +27,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from .ai import AIUnavailable, rewrite_report_pages, tutor_response
 from .db import ReportRecord, UsageEvent, User, daily_count, get_db, init_db, record_usage, upsert_user
 from .pdf_engine import inspect_pdf, render_replacement_pdf
+from .pdf_quality import verify_pdf_layout
 from .typography import summarize_typography
 from .report_pipeline import extract_template_details, content_slots, build_plan, extract_approved_reference_context
 from .report_jobs import create_job, for_user, public_job
@@ -84,6 +85,20 @@ async def security_headers(request: Request, call_next):
 @app.get("/health")
 def health():
     return {"status": "ok", "service": "lumidesk-ai", "timestamp": datetime.now(timezone.utc).isoformat()}
+
+
+@app.get("/api/system/readiness")
+def system_readiness():
+    """Non-secret integration readiness, not a paid inference or quality claim."""
+    return {
+        "service": "lumidesk-ai",
+        "ai_key_configured": bool(os.getenv("NVIDIA_API_KEY", "").strip()),
+        "ai_model_configured": bool(os.getenv("NVIDIA_MODEL", "nvidia/nemotron-3.5-lightning-30b-a3b").strip()),
+        "pdf_max_pages": 70,
+        "upload_limit_mb": MAX_UPLOAD_MB,
+        "visual_pdf_qa_enabled": True,
+        "note": "Configured means a key is present; it does not verify provider quota or authorization."
+    }
 
 
 @app.head("/health")
@@ -234,7 +249,8 @@ async def _read_report_upload(file: UploadFile) -> bytes:
     source = await file.read((MAX_UPLOAD_MB * 1024 * 1024) + 1)
     if len(source) > MAX_UPLOAD_MB * 1024 * 1024:
         raise HTTPException(status_code=413, detail=f"The selected PDF is larger than {MAX_UPLOAD_MB} MB.")
-    if not source.startswith(b"%PDF-"):
+    # ISO-compliant PDFs may contain a short binary preamble before the header.
+    if b"%PDF-" not in source[:1024]:
         raise HTTPException(status_code=422, detail="This is not a readable PDF document.")
     return source
 
@@ -256,7 +272,7 @@ async def analyze_report_template(request: Request, file: UploadFile = File(...)
     require_csrf(request)
     current_user(request)
     source = await _read_report_upload(file)
-    template = _read_template(source)
+    template = await asyncio.to_thread(_read_template, source)
     analysis = extract_template_details(template)
     slots = content_slots(template)
     analysis["typography"] = summarize_typography(template)
@@ -338,6 +354,38 @@ def report_job_status(job_id: str, request: Request):
     if job is None:
         raise HTTPException(status_code=404, detail="Report job not found or it has expired.")
     return public_job(job)
+
+
+@app.get("/api/reports/jobs/{job_id}/quality")
+def report_quality_details(job_id: str, request: Request):
+    user = current_user(request)
+    job = for_user(job_id, user["id"])
+    if not job:
+        raise HTTPException(status_code=404, detail="Report not found or expired.")
+    if job.status != "completed" or not job.quality:
+        raise HTTPException(status_code=409, detail="Visual checks are not finished.")
+    return job.quality
+
+
+@app.get("/api/reports/jobs/{job_id}/preview")
+def report_comparison_preview(job_id: str, request: Request, page: int = 1, kind: str = "generated"):
+    """Protected side-by-side inspection. No generated page is made public."""
+    import pymupdf
+    user = current_user(request)
+    job = for_user(job_id, user["id"])
+    if job is None:
+        raise HTTPException(status_code=404, detail="Report not found or expired.")
+    if job.status != "completed" or not job.result:
+        raise HTTPException(status_code=409, detail="Finish the report before viewing page previews.")
+    if kind not in ("source", "generated"):
+        raise HTTPException(status_code=422, detail="Preview the original or generated page.")
+    pdf_bytes = job.source if kind == "source" else job.result
+    with pymupdf.open(stream=pdf_bytes, filetype="pdf") as doc:
+        if page < 1 or page > len(doc):
+            raise HTTPException(status_code=422, detail="Page number is outside this report.")
+        pix = doc[page-1].get_pixmap(matrix=pymupdf.Matrix(1.15, 1.15), alpha=False)
+        data = pix.tobytes("png")
+    return Response(content=data, media_type="image/png", headers={"Cache-Control":"private, no-store"})
 
 
 @app.get("/api/reports/jobs/{job_id}/download")
@@ -514,19 +562,20 @@ async def api_generate_report(
     if not all((title, topic, student_name, usn)):
         raise HTTPException(status_code=422, detail="Enter your project title, what it does, your name, and your USN or registration number.")
     source = await _read_report_upload(file)
-    template = _read_template(source)
+    template = await asyncio.to_thread(_read_template, source)
     analysis = extract_template_details(template)
     sections = content_slots(template)
     if not sections:
-        raise HTTPException(status_code=422, detail="This PDF has no clearly identifiable body sections to rewrite. Try a text-based report with section headings.")
+        raise HTTPException(status_code=422, detail="No editable body text was identified. Use a searchable PDF with several body paragraphs, or convert this scan to a selectable-text PDF.")
     try:
         # Chunked section-level writing uses bounded retries, not one enormous
         # prompt that can truncate and leave the document half rewritten.
         generated_pages = await asyncio.wait_for(rewrite_report_pages(title=title, topic=topic, sections=sections), timeout=155)
-        plan = build_plan(template, analysis, title, student_name, usn, generated_pages)
+        plan = build_plan(template, analysis, title, student_name, usn, generated_pages, preserve_references=True)
         if plan["rewritten_body_slots"] != plan["planned_body_slots"] or plan["rejected_ai_slots"]:
             raise ValueError("A report section was incomplete or exceeded its original line lengths. Please retry with a clearer topic description.")
-        output, fit_warnings = render_replacement_pdf(source, template, plan)
+        output, fit_warnings = await asyncio.to_thread(render_replacement_pdf, source, template, plan)
+        quality = await asyncio.to_thread(verify_pdf_layout, source, output, template, plan)
     except AIUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except asyncio.TimeoutError as exc:
@@ -542,9 +591,10 @@ async def api_generate_report(
     db.commit()
     safe_name = "".join(c for c in title if c.isalnum() or c in " -_").strip().replace(" ", "_")[:50] or "Student_Report"
     import urllib.parse, json
-    warnings = analysis["warnings"] + ["Any original references must be replaced with verified sources for the new topic; draft certification and declarations require authorization."] + fit_warnings
+    warnings = analysis["warnings"] + ["Original references remain visible but must be verified or replaced for the new project. Draft certification requires authorized approval."] + fit_warnings
     headers = {"Content-Disposition": f'attachment; filename="{safe_name}_LumiDesk.pdf"',
                "X-Report-Warnings": str(len(warnings)),
+               "X-Visual-QA": quality["status"],
                "X-Report-Warning-Details": urllib.parse.quote(json.dumps(warnings[:12], ensure_ascii=False))}
     return Response(content=output, media_type="application/pdf", headers=headers)
 
