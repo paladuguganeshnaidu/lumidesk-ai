@@ -33,6 +33,7 @@ from .report_jobs import create_job, for_user, public_job
 from .image_editor import MAX_IMAGE_BYTES, image_slots, normalize_upload, apply_replacements, slot_preview
 from .docx_export import export_editable_docx
 from .security import csrf_token, current_user, require_admin, require_csrf
+from .billing import price_info as billing_price_info, create_checkout, handle_webhook, history as billing_history
 
 BASE_DIR = Path(__file__).resolve().parent
 APP_ENV = os.getenv("APP_ENV", "development").lower()
@@ -48,7 +49,7 @@ async def lifespan(_app: FastAPI):
     yield
 
 
-app = FastAPI(title="LumiDesk AI", version="1.0.0", docs_url=None if IS_PROD else "/api/docs", redoc_url=None, lifespan=lifespan)
+app = FastAPI(title="LumiDesk AI", version="1.1.0", docs_url=None if IS_PROD else "/api/docs", redoc_url=None, lifespan=lifespan)
 app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY, session_cookie="lumidesk_session", same_site="lax", https_only=IS_PROD, max_age=60 * 60 * 12)
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
@@ -121,6 +122,41 @@ def privacy_page(request: Request):
 @app.get("/terms", response_class=HTMLResponse)
 def terms_page(request: Request):
     return templates.TemplateResponse(request, "legal.html", {"request": request, "page_title": "Terms", "kind": "terms"})
+
+
+@app.get("/billing", response_class=HTMLResponse)
+def billing_page(request: Request):
+    return templates.TemplateResponse(request, "billing.html", {
+        "request": request, "user": request.session.get("user"), "csrf": csrf_token(request),
+    })
+
+
+@app.get("/api/billing/config")
+def billing_config():
+    # An unavailable gateway must not leak account keys or internal secrets.
+    return billing_price_info()
+
+
+@app.get("/api/billing/history")
+def billing_payments(request: Request):
+    user = current_user(request)
+    return {"payments": billing_history(int(user["id"]))}
+
+
+@app.post("/api/billing/checkout")
+async def billing_checkout(request: Request):
+    require_csrf(request)
+    user = current_user(request)
+    return await asyncio.to_thread(create_checkout, user)
+
+
+@app.post("/api/billing/webhook")
+async def billing_stripe_webhook(request: Request):
+    # Stripe sends server-to-server signed events, NOT browser CSRF tokens.
+    # Always verify the raw request bytes before changing an order.
+    raw = await request.body()
+    signature = request.headers.get("stripe-signature", "")
+    return await asyncio.to_thread(handle_webhook, raw, signature)
 
 
 @app.get("/auth/google")

@@ -6,3 +6,17 @@ __pycache__/
 *.db
 uploads/
 output/
+.env.*
+!.env.example
+*.sqlite
+*.sqlite3
+*.log
+.coverage
+htmlcov/
+.ruff_cache/
+.mypy_cache/
+node_modules/
+dist/
+build/
+playwright-report/
+test-results/

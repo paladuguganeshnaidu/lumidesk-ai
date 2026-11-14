@@ -45,9 +45,9 @@ Open `http://127.0.0.1:8000`.
 | `NVIDIA_MODEL` | No | Defaults to `nvidia/nemotron-3.5-lightning-30b-a3b` |
 | `ADMIN_EMAILS` | Yes for admin | Comma-separated, verified Google email allowlist |
 | `DATABASE_URL` | Strongly recommended | PostgreSQL URL for durable user and activity data |
-| `MAX_UPLOAD_MB` | No | PDF upload cap; defaults to 15 MB |
-| `DAILY_TUTOR_LIMIT` | No | Per-account rolling 24-hour tutor cap; defaults to 35 |
-| `DAILY_REPORT_LIMIT` | No | Per-account rolling 24-hour report cap; defaults to 3 |
+| `MAX_UPLOAD_MB` | No | PDF upload cap; defaults to 30 MB |
+| `DAILY_TUTOR_LIMIT` | No | Daily tutor cap. 0 disables the application-level cap |
+| `DAILY_REPORT_LIMIT` | No | Daily report cap. 0 disables the application-level cap |
 | `APP_ENV` | Yes in production | Set to `production` to enable secure cookies and HSTS |
 
 Never commit `.env` or API credentials. Put secrets in Render's environment settings.
@@ -125,3 +125,21 @@ The Report Studio accepts text-based PDFs up to 70 pages and 30 MB and processes
 ## Post-generation image editor
 
 After a draft is generated, **Edit images** lists the individual image placements in the original finished PDF, with per-page previews. Students can replace one placement with their own JPEG, PNG, or WebP (up to 8 MB / 18 megapixels), restore any slot to its original image, and re-download the updated PDF and editable Word. Edits preserve existing page sizes and all PDF text, with center-crop fitting inside the original picture rectangle. This is an authenticated, CSRF-protected, per-user operation; editing is temporary in the Render process memory, consistent with other report jobs. Changes are not carried to separately regenerated versions. Students should verify that photos, captions and claims accurately reflect their own work.
+
+
+## Optional Stripe Checkout (no payment keys in GitHub)
+
+LumiDesk includes an optional **Stripe-hosted Checkout** page at `/billing`. It supports either a one-time payment (`STRIPE_CHECKOUT_MODE=payment`) or a recurring Stripe Price (`subscription`). The page displays the actual price retrieved from Stripe, not a hard-coded amount. Payment functionality stays **disabled** until you supply a valid Stripe account configuration. No extra AI access is promised by a purchase; the free features remain unchanged.
+
+1. Use a Stripe account that is eligible to accept payments, create a Product and Price, and copy its `price_...` ID.
+2. Configure `STRIPE_SECRET_KEY` (start with a **test** key), `STRIPE_PRICE_ID`, and `STRIPE_WEBHOOK_SECRET` privately in Render environment variables.
+3. Configure a durable PostgreSQL `DATABASE_URL`, because payment and webhook records must survive Render restarts.
+4. In Stripe's dashboard, create a webhook endpoint: `https://lumidesk-ai.onrender.com/api/billing/webhook`. Subscribe to `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `checkout.session.async_payment_failed`, `customer.subscription.created`, `customer.subscription.updated`, `customer.subscription.deleted`, and `charge.refunded`.
+5. Set `PUBLIC_BASE_URL=https://lumidesk-ai.onrender.com`. Start with `STRIPE_CHECKOUT_MODE=payment` and `STRIPE_LIVE_ENABLED=false`. Use a matching **one-time** test Price. Test payments with Stripe test cards and verify signed webhook delivery and payment history.
+6. Only when business onboarding and payment verification are complete, switch to the correct live Stripe key, live Price and live webhook secret, and explicitly set `STRIPE_LIVE_ENABLED=true`.
+
+Stripe may require an invitation and additional verification for merchants based in India. Never commit API keys or webhook signing secrets. A Stripe return URL never grants a paid entitlement; only verified webhook events can update a payment's status. Billing is separate from learning quotas, so pricing or premium benefits must be explicitly defined before selling upgrades.
+
+## Repository layout
+
+`app/` holds FastAPI endpoints, billing, PDF/Word generators, and frontend assets; `tests/` holds regressions; `scripts/` contains build utilities; Git history preserves the removed placeholder root files. Local secret files, virtual environments, rendered PDFs, and cached Python files are excluded from Git.

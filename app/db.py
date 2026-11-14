@@ -47,6 +47,32 @@ class UsageEvent(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True)
 
 
+
+class PaymentOrder(Base):
+    """Owner-scoped Checkout record. Only signed Stripe webhooks change payment status."""
+    __tablename__ = "payment_orders"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    stripe_session_id: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    stripe_customer_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    stripe_subscription_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    stripe_payment_intent: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    price_id: Mapped[str] = mapped_column(String(255))
+    mode: Mapped[str] = mapped_column(String(32))
+    status: Mapped[str] = mapped_column(String(40), default="pending", index=True)
+    currency: Mapped[str] = mapped_column(String(8))
+    amount_minor: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
+class StripeEvent(Base):
+    """Webhook replay guard; event IDs must be unique."""
+    __tablename__ = "stripe_events"
+    id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    kind: Mapped[str] = mapped_column(String(100))
+    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
 class ReportRecord(Base):
     __tablename__ = "reports"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)

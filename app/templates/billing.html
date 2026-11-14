@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#0A0C0E">
+  <meta name="description" content="LumiDesk AI billing — optional payments through Stripe Checkout.">
+  <title>Billing · LumiDesk AI</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600&family=Syne:wght@600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/billing.css?v=1">
+</head>
+<body data-csrf="{{ csrf }}" data-authenticated="{{ 'yes' if user else 'no' }}">
+  <header class="billing-nav">
+    <a class="wordmark" href="/">LumiDesk<span>.</span></a>
+    <nav aria-label="Billing navigation">
+      <a href="/">Home</a>
+      <a href="/app">Workspace</a>
+      <a href="/privacy">Privacy</a>
+    </nav>
+  </header>
+  <main class="billing-main">
+    <div class="eyebrow"><span class="rule"></span> ACCOUNT / BILLING</div>
+    <h1>Support better<br><em>learning.</em></h1>
+    <p class="lede">LumiDesk's existing AI tutor and report tools remain available without purchasing anything. Optional payments support the project; no additional AI access is promised.</p>
+    <section class="billing-card" aria-labelledby="billing-title">
+      <div class="card-head">
+        <div><span class="index">01 / STRIPE CHECKOUT</span><h2 id="billing-title">Optional payment</h2></div>
+        <span class="tag" id="gateway-state">Checking availability</span>
+      </div>
+      <p class="note" id="billing-description">Checking the configured payment option…</p>
+      <div class="price" id="billing-price" aria-live="polite">—</div>
+      <p class="price-caption" id="billing-frequency"></p>
+      <div id="billing-notice" class="notice" role="status" aria-live="polite"></div>
+      <button type="button" id="billing-checkout" disabled>Checkout not available</button>
+      {% if not user %}<p class="signin-note">To make a payment, <a href="/auth/google">sign in securely with Google</a> first.</p>{% endif %}
+      <p class="small">Payments, if enabled, are handled on Stripe's hosted Checkout. LumiDesk never collects or stores your card number. Checkout confirmations are based on verified Stripe webhooks, not the return URL.</p>
+    </section>
+    {% if user %}
+    <section class="transactions" aria-labelledby="payment-history-heading">
+      <div class="section-heading"><span class="index">02 / ACCOUNT</span><h2 id="payment-history-heading">Payment history</h2></div>
+      <div id="billing-history" aria-live="polite">Checking your payment records…</div>
+    </section>
+    {% endif %}
+    <section class="support">
+      <span class="index">HELP / TRANSPARENCY</span>
+      <p>No product price is shown until the site owner supplies a real Stripe Price ID. If the payment gateway is unavailable, your learning workspace continues to work.</p>
+      <a href="mailto:hello@lumidesk.ai">Billing questions</a>
+    </section>
+  </main>
+  <footer class="billing-footer"><span>LUMIDESK AI · 2026</span><span>LEARN CLEARLY / CREATE CONFIDENTLY</span></footer>
+  <script src="/static/billing.js?v=1" defer></script>
+</body>
+</html>
