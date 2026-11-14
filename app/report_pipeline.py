@@ -178,8 +178,8 @@ def _official_draft_replacements(page: dict, page_index: int, old: dict, title: 
             "shown above are retained from the reference format. This document "
             "does not confirm that the proposed activity was performed, evaluated "
             "or approved. Academic records, supporting evidence and accuracy "
-            "must be checked by the student and the designated faculty members. "
-            "Any certification or signature must be issued only by an authorized "
+            "must be checked by the student and faculty members. "
+            "Certification or signature must be issued only by an authorized "
             "college representative. Until verified, this page is a draft, not a "
             "completed or officially certified document."
         )
@@ -206,6 +206,9 @@ def static_replacements(template: dict, old: dict, title: str, name: str, usn: s
     old_name = old.get("source_name", "")
     old_usn = old.get("source_usn", "")
     for idx, page in enumerate(template["pages"]):
+        if preserve_references and section_of(page) in ("references", "bibliography"):
+            # Unverified source citations must not be silently changed or fabricated.
+            continue
         official = _official_draft_replacements(page, idx, old, title, name, usn)
         substitutions.update(official)
         for block in page["blocks"]:
@@ -259,7 +262,7 @@ def build_plan(template: dict, old: dict, title: str, name: str, usn: str, ai_pa
             except (TypeError, ValueError, KeyError):
                 rejected += 1
     return {
-        "pages": [{"page_index": i, "blocks": [{"block_id": j, "text": txt} for (p, j), txt in updates.items() if p == i]} for i in range(len(template["pages"]))],
+        "pages": [{"page_index": i, "blocks": [{"block_id": j, "text": txt, "body": ((p,j) in approved or (section_of(template["pages"][p]) in ("certificate", "declaration") and len(template["pages"][p]["blocks"][j]["text"]) > 34))} for (p,j),txt in updates.items() if p == i]} for i in range(len(template["pages"]))],
         "rejected_ai_slots": rejected,
         "planned_body_slots": len(approved),
         "rewritten_body_slots": sum(key in approved for key in updates),

@@ -22,10 +22,12 @@ def _bitmap(page, zoom):
 def verify_pdf_layout(source: bytes, output: bytes, template: dict, plan: dict, *, zoom: float = 0.9) -> dict:
     """Verify page geometry, image placements and unedited visual pixels."""
     edited = {}
+    edited_details = {}
     for page in plan.get('pages', []):
         page_index = int(page.get('page_index', -1))
         for change in page.get('blocks', []):
             edited.setdefault(page_index, set()).add(int(change['block_id']))
+            edited_details[(page_index,int(change['block_id']))]=change
     issues = []
     summary = []
     with fitz.open(stream=source, filetype='pdf') as old, fitz.open(stream=output, filetype='pdf') as new:
@@ -55,6 +57,10 @@ def verify_pdf_layout(source: bytes, output: bytes, template: dict, plan: dict, 
             for line in template['pages'][i]['blocks']:
                 if line['block_id'] in edited.get(i, set()):
                     x0,y0,x1,y1 = line['rect']
+                    actual = edited_details.get((i,line['block_id']),{}).get('visual_mask')
+                    if actual:
+                        x0=min(x0,actual[0]); y0=min(y0,actual[1])
+                        x1=max(x1,actual[2]); y1=max(y1,actual[3])
                     painter.rectangle((int(x0*zoom)-3,int(y0*zoom)-3,int(x1*zoom)+3,int(y1*zoom)+3), fill=0)
             diff = ImageChops.difference(old_bitmap, new_bitmap).convert('L')
             distinct = diff.point(lambda v: 255 if v > 23 else 0)

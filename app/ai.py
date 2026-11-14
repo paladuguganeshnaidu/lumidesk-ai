@@ -172,7 +172,7 @@ async def rewrite_report_pages(*, title: str, topic: str, sections: list[dict],
     def fit(text: str, slot: dict, page_index: int, row: int) -> str:
         original = str(slot.get('sample', ''))
         target = max(12, int(slot.get('length', len(original)) or 12))
-        cleaned = ' '.join(str(text or '').split()).strip(' .')
+        cleaned = ' '.join(str(text or '').split()).strip()
         prefix = re.match(r'^(\d+[.)])\s*', original)
         if prefix and not cleaned.startswith(prefix.group(1)):
             cleaned = f'{prefix.group(1)} {cleaned}'
@@ -362,13 +362,16 @@ async def rewrite_report_pages(*, title: str, topic: str, sections: list[dict],
                     } for s in chunk]
                 }
                 prompt = (
-                    'Write NEW and original, topic-relevant academic BODY prose, one short line per slot. '
-                    'Do not replace headings, college/department, page footers, authors, photographs, signatures or certificates. '
-                    'No fabricated studies, observations, grades, approvals or citations. '
-                    'Keep each line close to its target character count, respecting any list number prefix. '
-                    'When this is a regenerated edition, vary the substance, sentence structures and wording; '
-                    'do not reuse prior_variant_to_avoid text. '
-                    'Return only valid JSON: {"blocks":[{"block_id":int,"text":str}]}.'
+                    'Write ORIGINAL, project-specific and coherent academic BODY prose for the requested concept, '
+                    'not a paraphrase of the uploaded student work. '
+                    'The text in adjacent slots MUST read as a continuous narrative, not unrelated standalone sentences. '
+                    'Keep each line within about 95 to 105 percent of its target character count and preserve '
+                    'paragraph endings and list-number prefixes. The layout fitter preserves the exact original '
+                    'font size, baseline, margin and number of lines; make the wording fit these slots naturally. '
+                    'Do not alter headings, institution details, page footers, signatures, certificates or photographs. '
+                    'Never fabricate completed fieldwork, survey results, approvals, references or measurements. '
+                    'For another variant use distinct substance and sentence structure without reusing previous wording. '
+                    'Return valid JSON only: {"blocks":[{"block_id":int,"text":str}]}.'
                 )
                 batch = {}
                 async with gate:

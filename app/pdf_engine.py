@@ -4,6 +4,7 @@ import re
 from pathlib import Path
 import pymupdf as fitz
 from .typography import annotate_typography
+from .format_fit import fit_body_text
 
 FONT_DIR = Path(__file__).resolve().parent / "fonts"
 
@@ -102,7 +103,7 @@ def render_replacement_pdf(source: bytes, template: dict, plan: dict) -> tuple[b
             continue
         for item in page.get("blocks", []):
             try:
-                replacements[(pidx, int(item["block_id"]))] = _clean_text(str(item.get("text", "")))
+                replacements[(pidx, int(item["block_id"]))] = {"text": _clean_text(str(item.get("text", ""))), "body": bool(item.get("body")), "justify": False, "plan_item": item}
             except (KeyError, TypeError, ValueError):
                 continue
     warnings = []
@@ -129,6 +130,18 @@ def render_replacement_pdf(source: bytes, template: dict, plan: dict) -> tuple[b
         changed = [block for block in original_blocks if (pidx, block["block_id"]) in replacements]
         if not changed:
             continue  # Untouched headings, institutional text, graphics, and photos stay intact.
+        # Use the embedded source font's real glyph advances when reflowing
+        # the generated paragraphs into the original number of line slots.
+        block_fonts = {}
+        for block in changed:
+            face = str(block.get('font','')).lower().replace('-', '')
+            original = embedded_fonts.get(face)
+            block_fonts[block['block_id']] = (
+                original[0] if original else fitz.Font(_font_name(block['font'], block['flags']))
+            )
+        by_id = {b['block_id']: replacements[(pidx,b['block_id'])] for b in changed}
+        warnings.extend(f"Page {pidx+1}: {note}" for note in
+                        fit_body_text(page_info, by_id, block_fonts))
         for block in changed:
             rect = fitz.Rect(block["rect"])
             # A little horizontal padding prevents an old final glyph surviving.
@@ -137,7 +150,8 @@ def render_replacement_pdf(source: bytes, template: dict, plan: dict) -> tuple[b
             page.add_redact_annot(rect, fill=None, cross_out=False)
         page.apply_redactions(images=0, graphics=0, text=0)
         for block in changed:
-            text = replacements[(pidx, block["block_id"])].strip()
+            item = replacements[(pidx, block["block_id"])]
+            text = item["text"].strip()
             if not text:
                 continue
             rect = fitz.Rect(block["rect"])
@@ -173,34 +187,87 @@ def render_replacement_pdf(source: bytes, template: dict, plan: dict) -> tuple[b
                     fontname = oldfont
                     if any(ord(c) > 255 for c in text):
                         warnings.append(f"Page {pidx+1}: non-Latin font unavailable. Check text rendering.")
-            # Match the original line's occupied area rather than reflowing the whole page.
-            width_available = min(page.rect.width - rect.x0 - 30, rect.width + 3)
+            # Do not shrink the reference type size (old code changed 16pt
+            # cover titles to 10pt). Preserve the actual font point size.
             target_size = font_size
-            for _ in range(15):
-                if font.text_length(text, fontsize=target_size) <= width_available:
-                    break
-                target_size *= 0.97
-            if font.text_length(text, fontsize=target_size) > width_available:
-                # No silent clipping: leave a fit warning if the target was too long.
-                warnings.append(f"Page {pidx + 1}, line {block['block_id'] + 1}: replacement needs manual fitting.")
-                target_size = max(5.7, target_size)
-                while font.text_length(text, fontsize=target_size) > width_available and len(text) > 12:
-                    text = text.rsplit(" ", 1)[0] if " " in text else text[:-1]
-            start_x = rect.x0
-            if block.get("leading_spaces", 0) >= 8:
-                # Word-like PDFs sometimes encode centered names with 50+ leading
-                # spaces inside one span. The line bbox starts at the left margin,
-                # but the visible word was centered; respect its actual anchor.
-                original_font = fitz.Font(_font_name(block["font"], block["flags"]))
-                original_width = original_font.text_length(block["text"], fontsize=float(block["font_size"]))
-                visual_center = rect.x1 - original_width / 2
-                start_x = max(10, visual_center - font.text_length(text, fontsize=target_size) / 2)
+            text_width = font.text_length(text, fontsize=target_size)
+            centered = (pidx == 0 and
+                        abs((rect.x0+rect.x1)/2-page.rect.width/2) < page.rect.width*.20 and
+                        (block.get('font_size',0)>=12 or block.get('leading_spaces',0)>=8))
+            centered = centered or bool(block.get('leading_spaces',0)>=8)
+            if centered:
+                visual_center=(rect.x0+rect.x1)/2
+                if block.get('leading_spaces',0)>=8:
+                    visual_center=page.rect.width/2
+                start_x=visual_center-text_width/2
+                if start_x<24 or start_x+text_width>page.rect.width-24:
+                    raise ValueError(
+                        f"Page {pidx+1}: requested title or name cannot fit at the "
+                        f"original {font_size:g} pt. Please shorten it for an exact match.")
+            else:
+                start_x=rect.x0
+                available=(rect.width+5 if item.get('body')
+                           else max(rect.width+6,page.rect.width-start_x-30))
+                if text_width>available+.4 and not item.get('justify'):
+                    if item.get('body'):
+                        # In a provider-fallback draft, keep the original point
+                        # size and a readable last complete word. Do not shrink
+                        # the type or let characters overlap the right margin.
+                        while text_width>available+.4 and len(text.split())>1:
+                            text=' '.join(text.split()[:-1])
+                            text_width=font.text_length(text,fontsize=target_size)
+                        item['plan_item']['text']=text
+                        warnings.append(
+                            f"Page {pidx+1}, line {block['block_id']+1}: "
+                            "draft body prose shortened to preserve original font and margins; review wording.")
+                        if text_width>available+.4:
+                            raise ValueError(
+                                f"Page {pidx+1}: one long word cannot fit the original line.")
+                    else:
+                        # Repeated running titles/captions may have less room than
+                        # the cover title. Avoid changing font metrics or page
+                        # geometry; shorten only secondary text, never an ID.
+                        if re.search(r"\b\d[A-Za-z]{2}\d{2}[A-Za-z]{2}\d{3}\b", text):
+                            raise ValueError(
+                                f"Page {pidx+1}: registration number would be clipped at the source font size.")
+                        while text_width>available+.4 and len(text.split())>1:
+                            text=' '.join(text.split()[:-1])
+                            text_width=font.text_length(text,fontsize=target_size)
+                        item['plan_item']['text']=text
+                        warnings.append(
+                            f"Page {pidx+1}, line {block['block_id']+1}: secondary "
+                            "caption shortened to retain the original font and page margin.")
+                        if text_width>available+.4:
+                            raise ValueError(
+                                f"Page {pidx+1}: the replacement cannot fit the original text area.")
             original_baseline = block.get('origin', [start_x, rect.y1])
             baseline = float(original_baseline[1])
             # Directly retain the PDF baseline. If shrinking text is necessary,
             # keep the baseline fixed rather than shifting the whole line.
             point = fitz.Point(start_x, max(1.0, min(page.rect.height-1, baseline)))
-            page.insert_text(point, text, fontname=fontname, fontsize=target_size, color=color, overlay=True)
+            # The visual QA masks the union of the original and the rewritten
+            # text footprint (important for center-aligned title changes).
+            item['plan_item']['visual_mask']=[
+                min(rect.x0,start_x)-3,rect.y0-3,
+                max(rect.x1,start_x+text_width)+3,rect.y1+3]
+            if item.get('justify'):
+                words=text.split()
+                widths=[font.text_length(word,fontsize=target_size) for word in words]
+                gap=(rect.width-sum(widths))/(len(words)-1) if len(words)>1 else 0
+                usual=font.text_length(' ',fontsize=target_size)
+                if len(words)>=3 and .55*usual<=gap<=3.5*usual:
+                    xpos=start_x
+                    for word,width in zip(words,widths):
+                        page.insert_text((xpos,point.y),word,fontname=fontname,
+                                         fontsize=target_size,color=color,overlay=True)
+                        xpos+=width+gap
+                else:
+                    warnings.append(f"Page {pidx+1}: natural justification did not fit this line.")
+                    page.insert_text(point,text,fontname=fontname,
+                                     fontsize=target_size,color=color,overlay=True)
+            else:
+                page.insert_text(point,text,fontname=fontname,fontsize=target_size,
+                                 color=color,overlay=True)
     doc.set_metadata({"title": "LumiDesk AI — Student Project Report", "author": "Student-authored report", "subject": "Original project report generated from an authorized design template"})
     out = doc.tobytes(garbage=4, deflate=True, clean=True)
     doc.close()
