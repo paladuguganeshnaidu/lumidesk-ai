@@ -19,13 +19,14 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 from starlette.background import BackgroundTask
 from starlette.middleware.sessions import SessionMiddleware
 
 from .ai import AIUnavailable, rewrite_report_pages, tutor_response
-from .db import ReportRecord, UsageEvent, User, daily_count, get_db, init_db, record_usage, upsert_user
+from .db import (PaymentOrder, ReportRecord, SessionEpoch, StripeEvent, UsageEvent, User,
+                 admin_emails, current_session_epoch, daily_count, get_db, init_db, record_usage, upsert_user)
 from .pdf_engine import inspect_pdf, render_replacement_pdf
 from .pdf_quality import verify_pdf_layout
 from .typography import summarize_typography
@@ -203,6 +204,7 @@ async def google_callback(request: Request, db: Session = Depends(get_db)):
     user = upsert_user(db, sub=info["sub"], email=info["email"], name=info.get("name") or info["email"].split("@")[0], picture=info.get("picture"))
     request.session.clear()
     request.session["user"] = {"id": user.id, "email": user.email, "name": user.name, "picture": user.picture, "role": user.role, "active": user.active}
+    request.session["session_epoch"] = current_session_epoch(db)
     csrf_token(request)
     return RedirectResponse(url="/admin" if user.role == "admin" else "/app", status_code=303)
 
@@ -216,7 +218,12 @@ async def logout(request: Request):
 
 @app.get("/api/me")
 def api_me(request: Request):
-    user = request.session.get("user")
+    user = None
+    if request.session.get("user"):
+        try:
+            user = current_user(request)
+        except HTTPException:
+            request.session.clear()
     return {"authenticated": bool(user), "user": user, "csrf": csrf_token(request), "limits": {"tutor_daily": TUTOR_LIMIT, "reports_daily": REPORT_LIMIT}}
 
 
@@ -630,8 +637,58 @@ def admin_overview(request: Request, db: Session = Depends(get_db)):
         "metrics": {"users": users, "active_7d": active, "reports": reports, "tutor_calls_7d": tutor_calls, "report_calls_7d": report_calls},
         "users": [{"id": u.id, "name": u.name, "email": u.email, "role": u.role, "active": u.active, "created_at": u.created_at.isoformat()} for u in latest_users],
         "reports": [{"title": r.title, "pages": r.pages, "user_id": r.user_id, "created_at": r.created_at.isoformat()} for r in latest_reports],
+        "database_counts": {
+            "users": users,
+            "usage_events": int(db.scalar(select(func.count(UsageEvent.id))) or 0),
+            "reports": reports,
+            "payment_orders": int(db.scalar(select(func.count(PaymentOrder.id))) or 0),
+            "stripe_events": int(db.scalar(select(func.count(StripeEvent.id))) or 0),
+        },
         "system": {"ai_configured": bool(os.getenv("NVIDIA_API_KEY")), "google_configured": bool(os.getenv("GOOGLE_CLIENT_ID") and os.getenv("GOOGLE_CLIENT_SECRET")), "database": "postgresql" if "postgresql" in str(db.bind.url) else "sqlite (ephemeral on Render Free)"},
     }
+
+
+class FullDatabaseReset(BaseModel):
+    confirmation: str
+    acknowledge_billing: bool = False
+
+
+@app.post("/api/admin/database/reset")
+def admin_reset_database(payload: FullDatabaseReset, request: Request, db: Session = Depends(get_db)):
+    """Clear all application records, preserving schema and the session revocation marker."""
+    admin = require_admin(request)
+    require_csrf(request)
+    if admin["email"].lower() not in admin_emails():
+        raise HTTPException(status_code=403, detail="Your email is not on the administrator allowlist.")
+    if payload.confirmation != "DELETE ALL LUMIDESK DATA" or payload.acknowledge_billing is not True:
+        raise HTTPException(status_code=400, detail="Type DELETE ALL LUMIDESK DATA and acknowledge payment records will be deleted.")
+    if not db.get(User, admin["id"]):
+        raise HTTPException(status_code=401, detail="Administrator account no longer exists.")
+
+    # Use one transaction and child-first ordering for SQLite and PostgreSQL.
+    counts = {}
+    try:
+        for model, label in (
+            (UsageEvent, "usage_events"),
+            (ReportRecord, "reports"),
+            (PaymentOrder, "payment_orders"),
+            (StripeEvent, "stripe_events"),
+            (User, "users"),
+        ):
+            counts[label] = db.execute(delete(model)).rowcount
+        epoch = db.get(SessionEpoch, 1)
+        if epoch is None:
+            raise RuntimeError("Session epoch was not initialized.")
+        epoch.value = secrets.token_hex(32)
+        db.commit()
+    except Exception:
+        db.rollback()
+        logging.exception("Administrator database reset failed")
+        raise HTTPException(status_code=500, detail="Reset failed; no database changes were committed.")
+    request.session.clear()
+    logging.warning("LumiDesk admin performed complete app-data reset (records deleted: %s)", counts)
+    return {"ok": True, "deleted": counts, "signed_out": True,
+            "message": "All application records cleared. Sign in again to create a fresh admin account."}
 
 
 @app.post("/api/admin/users/{user_id}/toggle")
