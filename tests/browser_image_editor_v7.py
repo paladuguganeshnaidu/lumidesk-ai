@@ -46,6 +46,7 @@ with sync_playwright() as p:
         page.locator('#report-success:not(.hidden)').wait_for(timeout=6000)
         page.click('#edit-report-images')
         page.locator('#image-edit-modal:not(.hidden)').wait_for(timeout=6000)
+        page.locator('.image-editor-card').first.wait_for(timeout=9000)
         assert page.locator('.image-editor-card').count()==2,(width,errors)
         overflow=page.evaluate('Math.max(document.documentElement.scrollWidth,document.body.scrollWidth)-innerWidth')
         assert overflow<=1,(width,overflow)
