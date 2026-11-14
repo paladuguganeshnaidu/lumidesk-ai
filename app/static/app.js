@@ -164,11 +164,11 @@
       const message = input.value.trim(); if (message.length < 3) return;
       const welcome = $('.assistant-welcome', chat); welcome?.remove();
       const userBubble = document.createElement('div'); userBubble.className = 'answer-user'; userBubble.textContent = message; chat.append(userBubble);
-      const thinking = document.createElement('div'); thinking.className = 'thinking-row'; thinking.innerHTML = '<span class="thinking-dots"><i></i><i></i><i></i></span> LumiDesk is organizing a clear explanation…'; chat.append(thinking);
+      const thinking = document.createElement('div'); thinking.className = 'thinking-row'; thinking.innerHTML = '<span class="thinking-dots"><i></i><i></i><i></i></span> LumiDesk is building a first-principles lesson and concept map…'; chat.append(thinking);
       const submit = $('button[type="submit"]', form); submit.disabled = true; input.value = '';
       chat.scrollTop = chat.scrollHeight;
       try {
-        const response = await api('/api/tutor', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({message, level:$('#learner-level')?.value || 'beginner', style:$('#learning-style')?.value || 'visual'})});
+        const response = await api('/api/tutor', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({message, level:$('#learner-level')?.value || 'beginner', style:$('#learning-style')?.value || 'visual', research: Boolean($('#research-enabled')?.checked)})});
         const data = await response.json(); thinking.remove(); renderTutorAnswer(data.result, chat); setUsage('tutor', data.usage.used, data.usage.limit);
       } catch (error) {
         thinking.remove(); const err = document.createElement('div'); err.className='answer-card'; err.innerHTML=`<p>${escapeHTML(error.message)}</p>`; chat.append(err);
@@ -182,9 +182,9 @@
     const paragraphs = String(data.explanation || '').split(/\n\s*\n/).filter(Boolean).map(p => `<p>${escapeHTML(p).replace(/\n/g,'<br>')}</p>`).join('');
     article.innerHTML = `<div class="answer-card"><h3>${escapeHTML(data.title || 'Here is the idea')}</h3>${paragraphs}${data.analogy ? `<div class="answer-callout"><b>Think of it this way:</b> ${escapeHTML(data.analogy)}</div>` : ''}${data.example ? `<h4>A practical example</h4><p>${escapeHTML(data.example)}</p>` : ''}${steps.length ? `<h4>Step by step</h4><ol>${steps.map(s=>`<li><b>${escapeHTML(s.title || '')}</b> — ${escapeHTML(s.detail || '')}</li>`).join('')}</ol>` : ''}${keyPoints.length ? `<h4>Remember these</h4><ul>${keyPoints.map(p=>`<li>${escapeHTML(p)}</li>`).join('')}</ul>` : ''}<div class="diagram-wrap ${data.mermaid ? '' : 'hidden'}"><div class="mermaid"></div></div>${Array.isArray(data.quiz) && data.quiz.length ? `<div class="quiz-card"><h4>Quick knowledge check</h4>${data.quiz.slice(0,3).map((q,i)=>`<div class="quiz-question"><b>${i+1}. ${escapeHTML(q.question || '')}</b>${(q.options || []).map((o,j)=>`<button type="button" data-q="${i}" data-option="${j}">${escapeHTML(o)}</button>`).join('')}<small class="quiz-feedback"></small></div>`).join('')}</div>` : ''}<p class="answer-disclaimer">Use this as a learning guide. Check important facts against your course material.</p></div>`;
     chat.append(article);
-    if (data.mermaid && window.mermaid && !/[<>]|script/i.test(data.mermaid)) {
+    if (data.mermaid && window.mermaid && !/javascript:|<\s*[a-z]|^\s*click\b|%%\{/im.test(data.mermaid)) {
       const target = $('.mermaid', article); target.textContent = data.mermaid;
-      window.mermaid.initialize({startOnLoad:false,theme:'base',securityLevel:'strict',themeVariables:{primaryColor:'#eee9ff',primaryTextColor:'#4b4660',lineColor:'#9a8bd0',secondaryColor:'#e7f6ef',tertiaryColor:'#fff1e9',fontFamily:'DM Sans'}});
+      window.mermaid.initialize({startOnLoad:false,theme:'base',securityLevel:'strict',themeVariables:{primaryColor:'#101317',primaryTextColor:'#EDE7DC',lineColor:'#9EA5A8',secondaryColor:'#0A0C0E',tertiaryColor:'#161B1D',fontFamily:'Sora'}});
       window.mermaid.run({nodes:[target]}).catch(()=>{target.textContent='Diagram preview unavailable for this response.';});
     } else $('.diagram-wrap', article)?.classList.add('hidden');
     $$('.quiz-question', article).forEach((question, index) => {
@@ -193,9 +193,14 @@
         $$('button', question).forEach(b => b.disabled = true);
         const chosen = Number(button.dataset.option), correct = chosen === Number(q.answer_index);
         button.classList.add(correct ? 'correct' : 'incorrect');
-        const feedback = $('.quiz-feedback', question); if (feedback) feedback.textContent = `${correct ? 'Correct!' : 'Not quite.'} ${q.explanation || ''}`;
+        const feedback = $('.quiz-feedback', question); if (feedback) feedback.textContent = (correct ? 'Correct! ' : `Not quite. Correct answer: ${q.options[Number(q.answer_index)] || 'Review the options'}. `) + (q.explanation || '');
       }));
     });
+    // The dependency-free visualizer always works, even if Mermaid cannot load.
+    $('#tutor-panel')?.classList.add('has-lesson');
+    if (window.LumiLearning && typeof window.LumiLearning.render === 'function') {
+      window.LumiLearning.render(article, data);
+    }
     chat.scrollTop = chat.scrollHeight;
   }
   function initReportStudio() {

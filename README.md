@@ -145,3 +145,45 @@ Stripe may require an invitation and additional verification for merchants based
 ## Repository layout
 
 `app/` holds FastAPI endpoints, billing, PDF/Word generators, and frontend assets; `tests/` holds regressions; `scripts/` contains build utilities; Git history preserves the removed placeholder root files. Local secret files, virtual environments, rendered PDFs, and cached Python files are excluded from Git.
+
+
+## Visual Learning Lab v1.2
+
+The tutor at \`/app?tab=tutor\` now teaches from first principles: prerequisites,
+plain-language explanations, practical examples, concept connections, stepwise
+walkthroughs, common misconceptions and interactive retrieval quizzes.
+
+- **Connected concept graph**: locally rendered, keyboard accessible SVG plus
+  selectable concept cards; does not require Mermaid or an image-generation API.
+- **Step navigator**: previous/next with full educational explanations.
+- **Retrieval practice**: quiz answers reveal the correct option and explanation.
+- **Study exports**: students can copy/download editable Markdown notes.
+- **Review tomorrow**: explicit opt-in stores a review topic only in the
+  student's local browser; it does not create a server reminder.
+- **Optional research**: checking "Find sources on the web" sends just the first
+  16 search terms (maximum 150 characters) to Wikipedia and OpenAlex. Results
+  have direct links to articles or works, with clear labels distinguishing
+  source snippets from AI-generated explanations. Research is not fact checking
+  and does not guarantee exhaustive coverage.
+- **Graceful degradation**: if external sources or Mermaid fail, the tutor
+  still uses a local structured concept visual; when neither source API can
+  respond, clearly labeled direct search links are available.
+
+The source module is \`app/learning_research.py\`, with a 12-minute in-memory
+cache, upstream timeouts, bounded result counts and fixed allowed HTTPS hosts.
+\`OPENALEX_API_KEY\` is **optional**; for sustained production research volume,
+obtain a free OpenAlex key and store it in Render environment variables. Never
+commit research or inference keys to GitHub. Research queries can contain
+information about the question; users should avoid submitting private details.
+
+Learning principles: practice testing and spaced practice have strong evidence
+across a range of learning settings (Dunlosky et al., 2013,
+https://doi.org/10.1177/1529100612453266; Carpenter et al., 2022,
+https://doi.org/10.1038/s44159-022-00089-1).
+These are pedagogical design references, not endorsements of LumiDesk.
+
+Tests: \`tests/test_learning_lab_v12.py\` mocks all research and inference APIs;
+\`tests/browser_learning_v12.py\` checks seven responsive widths and simulated
+interactive use with Chromium, without a student's Google credentials.
+A real, authenticated live NVIDIA-and-research session still requires an
+end-user integration check with working provider accounts.

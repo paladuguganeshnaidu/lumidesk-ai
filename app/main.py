@@ -50,7 +50,7 @@ async def lifespan(_app: FastAPI):
     yield
 
 
-app = FastAPI(title="LumiDesk AI", version="1.1.0", docs_url=None if IS_PROD else "/api/docs", redoc_url=None, lifespan=lifespan)
+app = FastAPI(title="LumiDesk AI", version="1.2.0", docs_url=None if IS_PROD else "/api/docs", redoc_url=None, lifespan=lifespan)
 app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY, session_cookie="lumidesk_session", same_site="lax", https_only=IS_PROD, max_age=60 * 60 * 12)
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
@@ -224,6 +224,7 @@ class TutorInput(BaseModel):
     message: str = Field(min_length=3, max_length=4000)
     level: str = Field(default="beginner", max_length=40)
     style: str = Field(default="visual", max_length=40)
+    research: bool = False
 
 
 @app.post("/api/tutor")
@@ -234,7 +235,10 @@ async def api_tutor(payload: TutorInput, request: Request, db: Session = Depends
     if TUTOR_LIMIT > 0 and used >= TUTOR_LIMIT:
         raise HTTPException(status_code=429, detail=f"You've reached today's learning limit ({TUTOR_LIMIT}). Please try again in 24 hours.")
     try:
-        result = await tutor_response(payload.message, payload.level, payload.style)
+        if payload.research:
+            result = await tutor_response(payload.message, payload.level, payload.style, research=True)
+        else:
+            result = await tutor_response(payload.message, payload.level, payload.style)
     except AIUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except Exception as exc:

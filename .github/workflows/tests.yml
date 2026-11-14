@@ -25,6 +25,7 @@ jobs:
       - name: Validate browser JavaScript syntax
         run: |
           node --check app/static/app.js
+          node --check app/static/learning_visualizer.js
           node --check app/static/portal.js
       - name: Run tests
         run: python -m pytest -q
@@ -36,3 +37,4 @@ jobs:
         run: |
           python tests/browser_smoke_v5.py
           python tests/browser_image_editor_v7.py
+          python tests/browser_learning_v12.py

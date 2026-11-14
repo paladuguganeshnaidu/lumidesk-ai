@@ -11,7 +11,7 @@ def test_health_and_pages():
     with TestClient(app) as client:
         assert client.get("/health").status_code == 200
         assert "LumiDesk AI" in client.get("/").text
-        assert "Visual learning assistant" in client.get("/app").text
+        assert "Visual Learning Lab" in client.get("/app").text
         assert "Admin console" in client.get("/admin").text
 
 

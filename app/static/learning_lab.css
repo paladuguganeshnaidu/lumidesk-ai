@@ -1,0 +1,118 @@
+/* LumiDesk Learning Lab v1.2: no gradients, no glow, no decorative card shadows. */
+.workspace-page .learning-controls{display:flex;flex-wrap:wrap;align-items:center;gap:12px 18px;padding:13px 0 5px;border-top:1px solid var(--line)}
+.workspace-page .learning-research-toggle{display:flex;align-items:flex-start;gap:9px;max-width:100%;cursor:pointer;font-size:12px;color:var(--ink);line-height:1.6}
+.workspace-page .learning-research-toggle input{accent-color:var(--amber);width:16px;height:16px;flex:none;margin:3px 0 0}
+.workspace-page .learning-research-toggle small{display:block;font-size:10px;color:var(--ink-muted);letter-spacing:0;margin:1px 0 0}
+.workspace-page .learning-method{margin-left:auto;color:var(--ink-faint);font-size:10px;letter-spacing:.11em;text-transform:uppercase}
+.workspace-page #tutor-panel.has-lesson .tutor-layout{grid-template-columns:minmax(0,1fr)}
+.workspace-page #tutor-panel.has-lesson .tutor-aside{display:none}
+.workspace-page #tutor-panel.has-lesson .tutor-main-card{min-width:0}
+.workspace-page #tutor-panel.has-lesson .chat-area{max-height:min(68vh,920px);min-height:330px;overflow:auto}
+.workspace-page .answer-message{width:100%;max-width:100%;min-width:0}
+.workspace-page .learning-extras{border-top:1px solid var(--line);margin:22px 0 0;padding-top:24px;max-width:100%;min-width:0;color:var(--ink)}
+.workspace-page .learning-extras-header{margin-bottom:23px}
+.workspace-page .learning-kicker{font:600 10px var(--font);letter-spacing:.15em;text-transform:uppercase;color:var(--amber)}
+.workspace-page .learning-extras-header h3{font:700 clamp(23px,3.5vw,37px)/1.12 var(--display);letter-spacing:-.035em;margin:10px 0 9px;color:var(--ink)}
+.workspace-page .learning-extras-header p{font-size:13px;color:var(--ink-muted);max-width:70ch;margin:0}
+.workspace-page .learning-map,.workspace-page .learning-walkthrough,.workspace-page .learning-sources{padding:22px 0 25px;border-top:1px solid var(--line);min-width:0}
+.workspace-page .learning-block-heading{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:8px 20px;margin-bottom:16px}
+.workspace-page .learning-block-heading h4{font:700 19px/1.2 var(--display);letter-spacing:-.025em;margin:0;color:var(--ink)}
+.workspace-page .learning-meta{font:600 9.5px var(--font);letter-spacing:.13em;color:var(--ink-faint)}
+.workspace-page .learning-node-track{display:flex;gap:9px;overflow-x:auto;overscroll-behavior-x:contain;scroll-snap-type:x proximity;padding:2px 1px 14px;scrollbar-width:thin}
+.workspace-page .learning-node{flex:0 0 clamp(115px,24%,174px);min-height:112px;max-width:210px;padding:13px;display:flex;flex-direction:column;justify-content:space-between;align-items:flex-start;text-align:left;background:var(--surface-2);border:1px solid var(--line);border-radius:2px;color:var(--ink-muted);cursor:pointer;scroll-snap-align:start;transition:border-color .16s,color .16s}
+.workspace-page .learning-node:hover,.workspace-page .learning-node.active{border-color:var(--amber);color:var(--ink)}
+.workspace-page .learning-node.active{border-top-width:3px}
+.workspace-page .learning-node-index{font:600 10px var(--font);letter-spacing:.12em;color:var(--amber)}
+.workspace-page .learning-node-name{font:600 13px/1.45 var(--font);word-break:normal;overflow-wrap:anywhere}
+.workspace-page .learning-node-detail{border-left:2px solid var(--amber);padding:9px 0 10px 18px;min-height:92px;margin-top:7px}
+.workspace-page .learning-node-detail strong{font:700 17px var(--display)}
+.workspace-page .learning-node-detail p{font-size:13px;line-height:1.75;color:var(--ink-muted);margin:7px 0}
+.workspace-page .learning-node-detail .learning-relation{font-size:9px;letter-spacing:.09em;color:var(--ink-faint);text-transform:uppercase}
+.workspace-page .learning-step-pane{background:var(--surface-2);padding:clamp(16px,3vw,29px);border:1px solid var(--line)}
+.workspace-page .learning-step-index{font:600 10px var(--font);letter-spacing:.12em;color:var(--amber)}
+.workspace-page .learning-step-pane h5{font:700 clamp(19px,3vw,27px)/1.17 var(--display);margin:10px 0;color:var(--ink)}
+.workspace-page .learning-step-pane p{font-size:14px;line-height:1.85;color:var(--ink-muted);margin:10px 0 20px;max-width:73ch}
+.workspace-page .learning-step-nav{display:flex;align-items:center;justify-content:flex-end;gap:12px;border-top:1px solid var(--line);padding-top:15px}
+.workspace-page .learning-step-counter{font-size:12px;color:var(--ink-faint);margin:0 auto}
+.workspace-page .learning-outline-button,.workspace-page .learning-action-button,.workspace-page .learning-followup-button{border:1px solid var(--line);border-radius:99px;background:transparent;color:var(--ink);padding:11px 15px;font:600 11px/1.4 var(--font);cursor:pointer;min-height:39px;transition:color .15s,border-color .15s}
+.workspace-page .learning-outline-button:hover:not(:disabled),.workspace-page .learning-action-button:hover:not(:disabled),.workspace-page .learning-followup-button:hover:not(:disabled){border-color:var(--amber);color:var(--amber)}
+.workspace-page .learning-outline-button:disabled{opacity:.4;cursor:not-allowed}
+.workspace-page .learning-review-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:13px;margin:12px 0 24px}
+.workspace-page .learning-detail-list{border:1px solid var(--line);padding:15px 17px;min-width:0}
+.workspace-page .learning-detail-list summary{font:600 12px var(--font);color:var(--ink);cursor:pointer}
+.workspace-page .learning-term{border-top:1px solid var(--line);padding:12px 0}
+.workspace-page .learning-term:first-of-type{margin-top:14px}
+.workspace-page .learning-term b{font-size:12px;color:var(--ink)}
+.workspace-page .learning-term p{font-size:12px;line-height:1.6;color:var(--ink-muted);margin:5px 0 0}
+.workspace-page .learning-practice{margin:20px 0;padding:17px 19px;border-left:2px solid var(--teal);background:var(--surface-2)}
+.workspace-page .learning-practice p{line-height:1.75;color:var(--ink);margin:9px 0 0;font-size:13px}
+.workspace-page .learning-source-list{display:grid;grid-template-columns:1fr;gap:0;border-top:1px solid var(--line)}
+.workspace-page .learning-source{display:grid;grid-template-columns:38px minmax(0,1fr) auto;align-items:center;gap:12px;padding:13px 0;border-bottom:1px solid var(--line);text-decoration:none;color:var(--ink);min-width:0}
+.workspace-page .learning-source:hover .learning-source-open{color:var(--amber)}
+.workspace-page .learning-source-id{font:700 10px var(--font);letter-spacing:.1em;color:var(--amber)}
+.workspace-page .learning-source-details{min-width:0}
+.workspace-page .learning-source-details b{display:block;font:600 12px/1.5 var(--font);overflow-wrap:anywhere}
+.workspace-page .learning-source-details small{display:block;font-size:10.5px;color:var(--ink-muted);margin-top:4px}
+.workspace-page .learning-source-open{font-size:10px;letter-spacing:.1em;color:var(--ink-faint)}
+.workspace-page .learning-source-disclaimer,.workspace-page .learning-source-empty{font-size:11px;color:var(--ink-muted);line-height:1.65;margin:13px 0 0}
+.workspace-page .learning-actions,.workspace-page .learning-followups{display:flex;align-items:center;flex-wrap:wrap;gap:9px;padding:18px 0;border-top:1px solid var(--line)}
+.workspace-page .learning-action-status{font-size:11px;color:var(--amber);flex:1 1 100%;min-height:15px}
+.workspace-page .learning-followups .learning-kicker{flex-basis:100%;margin-bottom:5px}
+.workspace-page .learning-action-button:focus-visible,.workspace-page .learning-node:focus-visible,.workspace-page .learning-followup-button:focus-visible{outline:2px solid var(--amber);outline-offset:3px}
+.workspace-page .quiz-card{border:1px solid var(--line);margin:21px 0;background:var(--surface-2);padding:clamp(14px,2.5vw,24px)}
+.workspace-page .quiz-card h4{font:700 20px var(--display);margin-bottom:18px;color:var(--ink)}
+.workspace-page .quiz-question{border-top:1px solid var(--line);padding:18px 0;display:flex;flex-wrap:wrap;gap:8px}
+.workspace-page .quiz-question b{width:100%;font-size:13px;margin-bottom:9px;color:var(--ink)}
+.workspace-page .quiz-question button{border:1px solid var(--line);border-radius:3px;padding:11px 13px;background:transparent;color:var(--ink);text-align:left;font-size:12px;min-height:42px;flex:1 1 40%}
+.workspace-page .quiz-question button:hover:not(:disabled){border-color:var(--amber)}
+.workspace-page .quiz-question button.correct{border-color:var(--teal)}
+.workspace-page .quiz-question button.incorrect{border-color:var(--amber)}
+.workspace-page .quiz-feedback{display:block;width:100%;color:var(--ink-muted);font-size:12px;margin-top:8px}
+@media(max-width:700px){
+  .workspace-page .learning-review-grid{grid-template-columns:1fr}
+  .workspace-page .learning-node{flex-basis:145px}
+  .workspace-page .learning-method{margin-left:0}
+  .workspace-page .learning-source{grid-template-columns:29px minmax(0,1fr) auto;gap:8px}
+  .workspace-page .learning-source-open{font-size:9px}
+  .workspace-page .learning-actions .learning-action-button{flex:1 1 145px}
+}
+@media(max-width:390px){
+  .workspace-page .learning-block-heading h4{font-size:17px}
+  .workspace-page .learning-node{flex-basis:132px}
+  .workspace-page .learning-step-nav{gap:6px}
+  .workspace-page .learning-outline-button{padding:9px 10px}
+}
+@media(prefers-reduced-motion:reduce){
+  .workspace-page .learning-node,.workspace-page .learning-outline-button,.workspace-page .learning-action-button{transition:none}
+  .workspace-page .learning-node-track{scroll-snap-type:none}
+}
+@media print{
+  .workspace-page .learning-actions,.workspace-page .learning-followups,.workspace-page .learning-step-nav{display:none}
+  .workspace-page .learning-extras{break-inside:avoid}
+}
+
+/* Responsive connected SVG graph: scroll its own surface, never the whole page. */
+.workspace-page .learning-graph-scroller{width:100%;min-width:0;overflow-x:auto;overscroll-behavior-x:contain;scrollbar-width:thin;margin:4px 0 14px;border:1px solid var(--line);background:var(--dark)}
+.workspace-page .learning-graph-svg{display:block;width:100%;min-width:680px;height:auto;max-height:300px}
+.workspace-page .learning-graph-node{cursor:pointer;outline:none}
+.workspace-page .learning-graph-node rect{transition:stroke .14s,stroke-width .14s}
+.workspace-page .learning-graph-node:hover rect,.workspace-page .learning-graph-node.active rect,.workspace-page .learning-graph-node:focus-visible rect{stroke:#E8913C;stroke-width:2.4}
+@media(max-width:700px){.workspace-page .learning-graph-svg{min-width:720px}}
+@media(prefers-reduced-motion:reduce){.workspace-page .learning-graph-node rect{transition:none}}
+
+/* Touch target correction: isolate each horizontally scrolling concept control. */
+.workspace-page .learning-node-track{
+  display:flex!important;flex-direction:row!important;flex-wrap:nowrap!important;
+  align-items:stretch!important;justify-content:flex-start!important;
+  gap:10px!important;min-height:118px;position:relative;isolation:isolate
+}
+.workspace-page .learning-node-track .learning-node{
+  position:relative!important;inset:auto!important;transform:none!important;
+  display:flex!important;flex:0 0 151px!important;min-width:151px!important;
+  max-width:151px!important;width:151px!important;
+  float:none!important;margin:0!important;
+  box-sizing:border-box;z-index:0;touch-action:pan-x
+}
+.workspace-page .learning-node-track .learning-node:focus-visible{
+  z-index:2;outline:2px solid var(--amber);outline-offset:-2px
+}
