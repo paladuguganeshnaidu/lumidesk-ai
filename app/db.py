@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import secrets
 from datetime import datetime, timezone
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, create_engine, func, select
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
@@ -23,6 +24,22 @@ SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, expi
 
 class Base(DeclarativeBase):
     pass
+
+
+class SessionEpoch(Base):
+    """Session invalidation marker; intentionally retained when app data is purged."""
+    __tablename__ = "session_epoch"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    value: Mapped[str] = mapped_column(String(64), nullable=False)
+
+
+def current_session_epoch(db) -> str:
+    row = db.get(SessionEpoch, 1)
+    if row is None:
+        row = SessionEpoch(id=1, value=secrets.token_hex(32))
+        db.add(row)
+        db.commit()
+    return row.value
 
 
 class User(Base):
@@ -85,6 +102,8 @@ class ReportRecord(Base):
 
 def init_db() -> None:
     Base.metadata.create_all(bind=engine)
+    with SessionLocal() as db:
+        current_session_epoch(db)
 
 
 def get_db():
